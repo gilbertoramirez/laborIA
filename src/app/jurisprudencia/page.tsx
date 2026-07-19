@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Search, Plus, Sparkles, ExternalLink, BookOpen } from "lucide-react";
+import Link from "next/link";
 
 interface Tesis {
   registro: string;
@@ -98,10 +99,10 @@ export default function Jurisprudencia() {
             <Search size={16} />
             Buscar
           </button>
-          <button className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand text-white rounded-lg text-sm font-medium hover:bg-brand-dark transition-colors active:scale-[0.98]">
+          <Link href="/casos?nuevo=1" className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand text-white rounded-lg text-sm font-medium hover:bg-brand-dark transition-colors active:scale-[0.98]">
             <Plus size={16} />
             Nuevo caso
-          </button>
+          </Link>
         </div>
       </div>
 

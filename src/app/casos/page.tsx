@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { Search, Plus, X } from "lucide-react";
 
 type Etapa = "Conciliación" | "Instrucción" | "Juicio";
@@ -124,7 +125,17 @@ const emptyForm = {
   cuantia: "",
 };
 
-export default function Casos() {
+export default function CasosPage() {
+  return (
+    <Suspense>
+      <Casos />
+    </Suspense>
+  );
+}
+
+function Casos() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [casos, setCasos] = useState<Caso[]>(casosIniciales);
   const [filtro, setFiltro] = useState<Filtro>("Todos");
   const [busqueda, setBusqueda] = useState("");
@@ -132,6 +143,15 @@ export default function Casos() {
   const [form, setForm] = useState(emptyForm);
   const [formError, setFormError] = useState("");
   const drawerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (searchParams.get("nuevo") === "1") {
+      setForm(emptyForm);
+      setFormError("");
+      setDrawerOpen(true);
+      router.replace("/casos", { scroll: false });
+    }
+  }, [searchParams, router]);
 
   useEffect(() => {
     if (drawerOpen) {
