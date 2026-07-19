@@ -1,7 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const SJF_API_URL =
+const SJF_SEARCH_URL =
   "https://sjf2.scjn.gob.mx/services/sjftesismicroservice/api/public/tesis";
+const SJF_DETAIL_URL =
+  "https://sjf2.scjn.gob.mx/services/sjftesismicroservice/api/public/tesis";
+
+const SJF_HEADERS = {
+  "Content-Type": "application/json",
+  Origin: "https://sjf2.scjn.gob.mx",
+  Referer: "https://sjf2.scjn.gob.mx/busqueda-principal-tesis",
+};
+
+interface SJFDocument {
+  id: string;
+  ius: number;
+  rubro: string;
+  texto: string | null;
+  epocaAbr: string;
+  instanciaAbr: string;
+  sala: string;
+  claveTesis: string;
+  tipoTesis: string;
+  ta_tj: number;
+  fechaPublicacion: string;
+  localizacion: string;
+  fuente: string;
+  textoPublicacion: string;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,13 +39,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const response = await fetch(SJF_API_URL, {
+    const response = await fetch(SJF_SEARCH_URL, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Origin: "https://sjf2.scjn.gob.mx",
-        Referer: "https://sjf2.scjn.gob.mx/busqueda-principal-tesis",
-      },
+      headers: SJF_HEADERS,
       body: JSON.stringify({
         searchText: query,
         pageNumber: page,
@@ -39,8 +60,28 @@ export async function POST(request: NextRequest) {
 
     const data = await response.json();
 
+    const documents: SJFDocument[] = data.documents || [];
+    const results = documents.map((doc) => ({
+      id: doc.id,
+      ius: doc.ius,
+      registro: doc.id,
+      rubro: doc.rubro || "(Sin rubro)",
+      texto: doc.texto || "",
+      epoca: doc.epocaAbr || "",
+      instancia: doc.sala || doc.instanciaAbr || "",
+      instanciaAbr: doc.instanciaAbr || "",
+      tipo: doc.ta_tj === 1 || doc.tipoTesis === "1" ? "Jurisprudencia" : "Tesis aislada",
+      claveTesis: doc.claveTesis || "",
+      fechaPublicacion: doc.fechaPublicacion || "",
+      localizacion: doc.localizacion || "",
+      fuente: doc.fuente || "SJF",
+      textoPublicacion: doc.textoPublicacion || "",
+    }));
+
     return NextResponse.json({
-      results: data,
+      results,
+      total: data.total || 0,
+      totalPages: data.totalPage || 0,
       query,
       page,
     });
@@ -48,6 +89,37 @@ export async function POST(request: NextRequest) {
     console.error("SJF search error:", error);
     return NextResponse.json(
       { error: "Error conectando con el SJF" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+
+    if (!id) {
+      return NextResponse.json({ error: "Se requiere ID" }, { status: 400 });
+    }
+
+    const response = await fetch(`${SJF_DETAIL_URL}/${id}`, {
+      headers: SJF_HEADERS,
+    });
+
+    if (!response.ok) {
+      return NextResponse.json(
+        { error: `Error obteniendo detalle: ${response.status}` },
+        { status: 502 }
+      );
+    }
+
+    const data = await response.json();
+    return NextResponse.json({ tesis: data });
+  } catch (error) {
+    console.error("SJF detail error:", error);
+    return NextResponse.json(
+      { error: "Error obteniendo detalle" },
       { status: 500 }
     );
   }

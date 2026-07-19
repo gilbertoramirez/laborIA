@@ -13,17 +13,26 @@ import {
   Save,
   Database,
   Globe,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import Link from "next/link";
 
 interface TesisExterna {
-  registro?: string;
-  epoca?: string;
-  instancia?: string;
-  tipo?: string;
-  rubro?: string;
-  texto?: string;
-  [key: string]: unknown;
+  id: string;
+  ius: number;
+  registro: string;
+  rubro: string;
+  texto: string;
+  epoca: string;
+  instancia: string;
+  instanciaAbr: string;
+  tipo: string;
+  claveTesis: string;
+  fechaPublicacion: string;
+  localizacion: string;
+  fuente: string;
+  textoPublicacion: string;
 }
 
 interface TesisGuardada {
@@ -39,7 +48,7 @@ interface TesisGuardada {
 }
 
 type Tab = "externa" | "ia";
-type SaveStatus = "idle" | "saving" | "saved" | "exists" | "error";
+type SaveStatus = "idle" | "saving" | "loading-text" | "saved" | "exists" | "error";
 
 export default function Jurisprudencia() {
   const [tab, setTab] = useState<Tab>("externa");
@@ -49,6 +58,9 @@ export default function Jurisprudencia() {
   const [externSearching, setExternSearching] = useState(false);
   const [externSearched, setExternSearched] = useState(false);
   const [externError, setExternError] = useState("");
+  const [externTotal, setExternTotal] = useState(0);
+  const [externPage, setExternPage] = useState(1);
+  const [externTotalPages, setExternTotalPages] = useState(0);
 
   const [iaResults, setIaResults] = useState<TesisGuardada[]>([]);
   const [iaSearching, setIaSearching] = useState(false);
@@ -61,8 +73,7 @@ export default function Jurisprudencia() {
     {}
   );
 
-  async function handleExternSearch(e?: React.FormEvent) {
-    e?.preventDefault();
+  async function searchExtern(page: number) {
     if (!query.trim() || externSearching) return;
 
     setExternSearching(true);
@@ -74,7 +85,7 @@ export default function Jurisprudencia() {
       const res = await fetch("/api/jurisprudencia/buscar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: query.trim(), page: 1, pageSize: 10 }),
+        body: JSON.stringify({ query: query.trim(), page, pageSize: 10 }),
       });
 
       if (!res.ok) {
@@ -83,10 +94,10 @@ export default function Jurisprudencia() {
       }
 
       const data = await res.json();
-      const results = Array.isArray(data.results)
-        ? data.results
-        : data.results?.data || data.results?.tesis || [];
-      setExternResults(results);
+      setExternResults(data.results || []);
+      setExternTotal(data.total || 0);
+      setExternPage(data.page || 1);
+      setExternTotalPages(data.totalPages || 0);
     } catch (err) {
       setExternError(
         err instanceof Error ? err.message : "Error conectando con el SJF"
@@ -112,10 +123,7 @@ export default function Jurisprudencia() {
         body: JSON.stringify({ query: query.trim(), limit: 10 }),
       });
 
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Error en la búsqueda");
-      }
+      if (!res.ok) throw new Error("Error en la búsqueda");
 
       const data = await res.json();
       setIaResults(data.results);
@@ -127,38 +135,59 @@ export default function Jurisprudencia() {
   }
 
   function handleSearch(e?: React.FormEvent) {
-    if (tab === "externa") handleExternSearch(e);
+    e?.preventDefault();
+    if (tab === "externa") searchExtern(1);
     else handleIaSearch(e);
   }
 
-  async function handleSaveTesis(tesis: TesisExterna) {
-    const key = tesis.registro || tesis.rubro || "";
+  async function fetchTextoAndSave(tesis: TesisExterna) {
+    const key = tesis.id;
+    let texto = tesis.texto;
+
+    if (!texto) {
+      setSaveStatuses((prev) => ({ ...prev, [key]: "loading-text" }));
+      try {
+        const res = await fetch(`/api/jurisprudencia/buscar?id=${tesis.id}`);
+        if (res.ok) {
+          const data = await res.json();
+          texto = data.tesis?.texto || data.tesis?.rubro || tesis.rubro;
+        } else {
+          texto = tesis.rubro;
+        }
+      } catch {
+        texto = tesis.rubro;
+      }
+    }
+
     setSaveStatuses((prev) => ({ ...prev, [key]: "saving" }));
 
     try {
       const res = await fetch("/api/jurisprudencia/guardar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tesis }),
+        body: JSON.stringify({
+          tesis: {
+            registro: tesis.id,
+            epoca: tesis.epoca,
+            instancia: tesis.instancia,
+            tipo: tesis.tipo,
+            rubro: tesis.rubro,
+            texto: texto,
+          },
+        }),
       });
-
-      const data = await res.json();
 
       if (res.status === 409) {
         setSaveStatuses((prev) => ({ ...prev, [key]: "exists" }));
         return;
       }
 
-      if (!res.ok) throw new Error(data.error);
+      if (!res.ok) throw new Error("Error al guardar");
 
       setSaveStatuses((prev) => ({ ...prev, [key]: "saved" }));
     } catch {
       setSaveStatuses((prev) => ({ ...prev, [key]: "error" }));
     }
-  }
-
-  function getTesisKey(t: TesisExterna): string {
-    return t.registro || t.rubro || JSON.stringify(t).slice(0, 50);
   }
 
   function similarityColor(s: number) {
@@ -258,7 +287,7 @@ export default function Jurisprudencia() {
         </div>
       </form>
 
-      {/* External search tab */}
+      {/* ========== External search tab ========== */}
       {tab === "externa" && (
         <>
           {!externSearched && (
@@ -268,8 +297,8 @@ export default function Jurisprudencia() {
                 Busca en el Semanario Judicial
               </h2>
               <p className="text-sm text-text-muted max-w-md mx-auto mb-6">
-                Busca tesis y jurisprudencias directamente en la base del SJF de
-                la SCJN. Guarda las que necesites para buscarlas después con IA.
+                Consulta tesis y jurisprudencias directamente de la SCJN. Guarda
+                las que necesites para buscarlas después con IA.
               </p>
               <div className="flex justify-center gap-6 text-xs text-text-muted">
                 <div className="flex items-center gap-2">
@@ -310,117 +339,92 @@ export default function Jurisprudencia() {
           {externResults.length > 0 && (
             <div className="animate-fade-in">
               <p className="text-xs text-text-muted mb-4">
-                {externResults.length} resultados del SJF &middot; Haz click en
-                &quot;Guardar&quot; para indexar con IA
+                {externTotal.toLocaleString()} tesis encontradas &middot;
+                Página {externPage} de {externTotalPages}
               </p>
               <div className="grid grid-cols-5 gap-6">
                 <div className="col-span-3 space-y-3">
-                  {externResults.map((t, i) => {
-                    const key = getTesisKey(t);
-                    const status = saveStatuses[key] || "idle";
+                  {externResults.map((t) => {
+                    const status = saveStatuses[t.id] || "idle";
                     return (
                       <div
-                        key={i}
+                        key={t.id}
                         onClick={() => setSelectedTesis(t)}
                         className={`bg-white rounded-xl border p-5 hover:shadow-sm transition-all cursor-pointer ${
-                          selectedTesis === t
+                          selectedTesis && "id" in selectedTesis && selectedTesis.id === t.id
                             ? "border-brand shadow-sm"
                             : "border-border"
                         }`}
                       >
-                        <div className="flex items-start justify-between gap-4 mb-2">
+                        <div className="flex items-start justify-between gap-3 mb-2">
                           <div className="flex items-center gap-2 text-xs text-text-muted flex-wrap">
-                            {t.epoca && <span>{t.epoca}</span>}
-                            {t.instancia && (
-                              <>
-                                <span>&middot;</span>
-                                <span>{t.instancia}</span>
-                              </>
-                            )}
-                            {t.tipo && (
-                              <span
-                                className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                                  t.tipo === "Jurisprudencia"
-                                    ? "bg-brand-light text-brand"
-                                    : "bg-stone-100 text-text-secondary"
-                                }`}
-                              >
-                                {t.tipo}
-                              </span>
-                            )}
+                            <span>{t.epoca}</span>
+                            <span>&middot;</span>
+                            <span>{t.instanciaAbr}</span>
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                t.tipo === "Jurisprudencia"
+                                  ? "bg-brand-light text-brand"
+                                  : "bg-stone-100 text-text-secondary"
+                              }`}
+                            >
+                              {t.tipo}
+                            </span>
                           </div>
-                          <button
+                          <SaveButton
+                            status={status}
                             onClick={(e) => {
                               e.stopPropagation();
                               if (status === "idle" || status === "error")
-                                handleSaveTesis(t);
+                                fetchTextoAndSave(t);
                             }}
-                            disabled={
-                              status === "saving" ||
-                              status === "saved" ||
-                              status === "exists"
-                            }
-                            className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                              status === "saved"
-                                ? "bg-green-50 text-green-700"
-                                : status === "exists"
-                                  ? "bg-amber-50 text-amber-700"
-                                  : status === "saving"
-                                    ? "bg-stone-100 text-text-muted"
-                                    : status === "error"
-                                      ? "bg-red-50 text-red-700 hover:bg-red-100"
-                                      : "bg-brand-light text-brand hover:bg-brand/10"
-                            }`}
-                          >
-                            {status === "saving" && (
-                              <Loader2 size={12} className="animate-spin" />
-                            )}
-                            {status === "saved" && (
-                              <CheckCircle2 size={12} />
-                            )}
-                            {status === "exists" && (
-                              <CheckCircle2 size={12} />
-                            )}
-                            {status === "error" && (
-                              <AlertCircle size={12} />
-                            )}
-                            {status === "idle" && <Save size={12} />}
-                            {status === "saving"
-                              ? "Guardando..."
-                              : status === "saved"
-                                ? "Guardada"
-                                : status === "exists"
-                                  ? "Ya existe"
-                                  : status === "error"
-                                    ? "Reintentar"
-                                    : "Guardar"}
-                          </button>
+                          />
                         </div>
                         <h3 className="text-sm font-semibold text-text-primary mb-1.5 leading-snug">
-                          {t.rubro || "(Sin rubro)"}
+                          {t.rubro}
                         </h3>
-                        <p className="text-xs text-text-secondary leading-relaxed line-clamp-3">
-                          {(t.texto as string) || (t.extracto as string) || "(Sin texto)"}
-                        </p>
-                        {t.registro && (
-                          <p className="text-[10px] text-text-muted mt-2 font-mono">
-                            Reg. {t.registro}
-                          </p>
-                        )}
+                        <div className="flex items-center gap-3 text-[10px] text-text-muted mt-2">
+                          <span className="font-mono">IUS: {t.ius}</span>
+                          {t.claveTesis && (
+                            <>
+                              <span>&middot;</span>
+                              <span>{t.claveTesis}</span>
+                            </>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
+
+                  {/* Pagination */}
+                  <div className="flex items-center justify-between pt-4">
+                    <button
+                      onClick={() => searchExtern(externPage - 1)}
+                      disabled={externPage <= 1 || externSearching}
+                      className="inline-flex items-center gap-1 px-3 py-2 text-sm text-text-secondary border border-border rounded-lg hover:bg-stone-50 disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      <ChevronLeft size={14} />
+                      Anterior
+                    </button>
+                    <span className="text-xs text-text-muted">
+                      Página {externPage} de {externTotalPages}
+                    </span>
+                    <button
+                      onClick={() => searchExtern(externPage + 1)}
+                      disabled={externPage >= externTotalPages || externSearching}
+                      className="inline-flex items-center gap-1 px-3 py-2 text-sm text-text-secondary border border-border rounded-lg hover:bg-stone-50 disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      Siguiente
+                      <ChevronRight size={14} />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="col-span-2">
-                  {selectedTesis ? (
-                    <DetailPanel
-                      tesis={selectedTesis}
-                      onClose={() => setSelectedTesis(null)}
-                    />
-                  ) : (
-                    <EmptyDetail />
-                  )}
+                  <DetailPanel
+                    tesis={selectedTesis}
+                    onClose={() => setSelectedTesis(null)}
+                  />
                 </div>
               </div>
             </div>
@@ -428,7 +432,7 @@ export default function Jurisprudencia() {
         </>
       )}
 
-      {/* AI search tab */}
+      {/* ========== AI search tab ========== */}
       {tab === "ia" && (
         <>
           {!iaSearched && (
@@ -439,8 +443,7 @@ export default function Jurisprudencia() {
               </h2>
               <p className="text-sm text-text-muted max-w-md mx-auto">
                 Busca en tus tesis guardadas usando lenguaje natural. El sistema
-                entiende sinónimos y contexto para encontrar los resultados más
-                relevantes.
+                entiende sinónimos y contexto.
               </p>
             </div>
           )}
@@ -452,7 +455,7 @@ export default function Jurisprudencia() {
                 Sin resultados
               </h2>
               <p className="text-sm text-text-muted max-w-md mx-auto">
-                No se encontraron tesis en tu base. Primero busca en la pestaña
+                No se encontraron tesis en tu base. Primero busca en
                 &quot;Buscar en SCJN&quot; y guarda las tesis que necesites.
               </p>
             </div>
@@ -515,7 +518,7 @@ export default function Jurisprudencia() {
                       </p>
                       {t.registro && (
                         <p className="text-[10px] text-text-muted mt-2 font-mono">
-                          Reg. {t.registro}
+                          IUS: {t.registro}
                         </p>
                       )}
                     </button>
@@ -523,14 +526,10 @@ export default function Jurisprudencia() {
                 </div>
 
                 <div className="col-span-2">
-                  {selectedTesis ? (
-                    <DetailPanel
-                      tesis={selectedTesis}
-                      onClose={() => setSelectedTesis(null)}
-                    />
-                  ) : (
-                    <EmptyDetail />
-                  )}
+                  <DetailPanel
+                    tesis={selectedTesis}
+                    onClose={() => setSelectedTesis(null)}
+                  />
                 </div>
               </div>
             </div>
@@ -541,22 +540,67 @@ export default function Jurisprudencia() {
   );
 }
 
+function SaveButton({
+  status,
+  onClick,
+}: {
+  status: SaveStatus;
+  onClick: (e: React.MouseEvent) => void;
+}) {
+  const config = {
+    idle: { icon: Save, label: "Guardar", style: "bg-brand-light text-brand hover:bg-brand/10" },
+    "loading-text": { icon: Loader2, label: "Obteniendo texto...", style: "bg-stone-100 text-text-muted" },
+    saving: { icon: Loader2, label: "Indexando...", style: "bg-stone-100 text-text-muted" },
+    saved: { icon: CheckCircle2, label: "Guardada", style: "bg-green-50 text-green-700" },
+    exists: { icon: CheckCircle2, label: "Ya existe", style: "bg-amber-50 text-amber-700" },
+    error: { icon: AlertCircle, label: "Reintentar", style: "bg-red-50 text-red-700 hover:bg-red-100" },
+  };
+
+  const c = config[status];
+  const Icon = c.icon;
+  const spinning = status === "loading-text" || status === "saving";
+
+  return (
+    <button
+      onClick={onClick}
+      disabled={spinning || status === "saved" || status === "exists"}
+      className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${c.style}`}
+    >
+      <Icon size={12} className={spinning ? "animate-spin" : ""} />
+      {c.label}
+    </button>
+  );
+}
+
 function DetailPanel({
   tesis,
   onClose,
 }: {
-  tesis: TesisExterna | TesisGuardada;
+  tesis: TesisExterna | TesisGuardada | null;
   onClose: () => void;
 }) {
-  const rubro = ("rubro" in tesis ? tesis.rubro : "") as string;
-  const texto = (("texto" in tesis ? tesis.texto : "") ||
-    ("extracto" in tesis ? tesis.extracto : "")) as string;
-  const registro = ("registro" in tesis ? tesis.registro : "") as string;
-  const epoca = ("epoca" in tesis ? tesis.epoca : "") as string;
-  const instancia = ("instancia" in tesis ? tesis.instancia : "") as string;
-  const tipo = ("tipo" in tesis ? tesis.tipo : "") as string;
-  const similarity =
-    "similarity" in tesis ? (tesis as TesisGuardada).similarity : null;
+  if (!tesis) {
+    return (
+      <div className="bg-white rounded-xl border border-border p-8 text-center sticky top-8">
+        <BookOpen size={32} className="text-text-muted mx-auto mb-3" />
+        <p className="text-sm text-text-muted">
+          Selecciona una tesis para ver el detalle.
+        </p>
+      </div>
+    );
+  }
+
+  const isExterna = "ius" in tesis;
+  const rubro = tesis.rubro;
+  const texto = tesis.texto;
+  const epoca = tesis.epoca;
+  const instancia = tesis.instancia;
+  const tipo = tesis.tipo;
+  const registro = tesis.registro || tesis.id;
+  const similarity = "similarity" in tesis ? (tesis as TesisGuardada).similarity : null;
+  const claveTesis = isExterna ? (tesis as TesisExterna).claveTesis : "";
+  const localizacion = isExterna ? (tesis as TesisExterna).localizacion : "";
+  const ius = isExterna ? (tesis as TesisExterna).ius : null;
 
   return (
     <div className="bg-white rounded-xl border border-border p-6 sticky top-8">
@@ -576,15 +620,6 @@ function DetailPanel({
       </div>
 
       <div className="space-y-4">
-        {registro && (
-          <div>
-            <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1">
-              Registro
-            </p>
-            <p className="text-sm font-mono text-text-primary">{registro}</p>
-          </div>
-        )}
-
         <div>
           <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1">
             Rubro
@@ -594,14 +629,16 @@ function DetailPanel({
           </p>
         </div>
 
-        <div>
-          <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1">
-            Texto
-          </p>
-          <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap max-h-64 overflow-y-auto">
-            {texto}
-          </p>
-        </div>
+        {texto && (
+          <div>
+            <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1">
+              Texto
+            </p>
+            <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap max-h-48 overflow-y-auto">
+              {texto}
+            </p>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           {epoca && (
@@ -628,6 +665,14 @@ function DetailPanel({
               <p className="text-sm text-text-primary">{tipo}</p>
             </div>
           )}
+          {ius && (
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1">
+                IUS
+              </p>
+              <p className="text-sm font-mono text-text-primary">{ius}</p>
+            </div>
+          )}
           {similarity !== null && (
             <div>
               <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1">
@@ -640,24 +685,37 @@ function DetailPanel({
           )}
         </div>
 
+        {claveTesis && (
+          <div>
+            <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1">
+              Clave
+            </p>
+            <p className="text-xs font-mono text-text-secondary">
+              {claveTesis}
+            </p>
+          </div>
+        )}
+        {localizacion && (
+          <div>
+            <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1">
+              Localización
+            </p>
+            <p className="text-xs text-text-secondary">{localizacion}</p>
+          </div>
+        )}
+
         <hr className="border-border" />
 
-        <button className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-border rounded-lg text-sm text-text-secondary hover:bg-stone-50 transition-colors">
+        <a
+          href={`https://sjf2.scjn.gob.mx/detalle/tesis/${registro}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-border rounded-lg text-sm text-text-secondary hover:bg-stone-50 transition-colors"
+        >
           <ExternalLink size={14} />
           Ver en SJF
-        </button>
+        </a>
       </div>
-    </div>
-  );
-}
-
-function EmptyDetail() {
-  return (
-    <div className="bg-white rounded-xl border border-border p-8 text-center">
-      <BookOpen size={32} className="text-text-muted mx-auto mb-3" />
-      <p className="text-sm text-text-muted">
-        Selecciona una tesis para ver el detalle completo.
-      </p>
     </div>
   );
 }
