@@ -121,10 +121,16 @@ export default function Liquidaciones() {
   const resultRef = useRef<HTMLDivElement>(null);
 
   const sd = parseFloat(salarioDiarioStr) || 0;
-  const formValid = sd > 0 && fechaIngreso.length > 0 && fechaBaja.length > 0;
+
+  const [formError, setFormError] = useState("");
 
   // --- Core calculation ---
   const calcular = useCallback(() => {
+    if (sd <= 0 || !fechaIngreso || !fechaBaja) {
+      setFormError("Completa salario diario, fecha de ingreso y fecha de separación.");
+      return;
+    }
+    setFormError("");
     const antiguedad = calcAntiguedad(fechaIngreso, fechaBaja);
     const sm = SALARIOS_MINIMOS[areaGeo].valor;
     const primaVacDecimal = primaVacPct / 100;
@@ -192,6 +198,7 @@ export default function Liquidaciones() {
     setNombrePatron("");
     setResultado(null);
     setPctNegociacion(100);
+    setFormError("");
   }, []);
 
   const totalNegociado = resultado ? Math.round(resultado.subtotal * (pctNegociacion / 100)) : 0;
@@ -357,15 +364,13 @@ export default function Liquidaciones() {
           </div>
 
           {/* Action buttons */}
+          {formError && (
+            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2.5">{formError}</p>
+          )}
           <div className="flex gap-3">
             <button
               onClick={calcular}
-              disabled={!formValid}
-              className={`flex-1 flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl text-sm font-semibold transition-all active:scale-[0.98] shadow-lg ${
-                formValid
-                  ? "bg-gradient-to-r from-brand-dark to-brand text-white hover:shadow-xl shadow-brand/25 cursor-pointer"
-                  : "bg-stone-200 text-stone-400 cursor-not-allowed shadow-none"
-              }`}
+              className="flex-1 flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl text-sm font-semibold transition-all active:scale-[0.98] shadow-lg bg-gradient-to-r from-brand-dark to-brand text-white hover:shadow-xl shadow-brand/25 cursor-pointer"
             >
               <Calculator size={18} />
               {resultado ? "Recalcular liquidación" : "Calcular liquidación"}
