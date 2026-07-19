@@ -102,7 +102,7 @@ function formatFechaES(d: string): string {
 export default function Liquidaciones() {
   // --- Form state ---
   const [tipo, setTipo] = useState<TipoSeparacion>("despido_injustificado");
-  const [salarioDiario, setSalarioDiario] = useState<number | "">("");
+  const [salarioDiarioStr, setSalarioDiarioStr] = useState("");
   const [fechaIngreso, setFechaIngreso] = useState("");
   const [fechaBaja, setFechaBaja] = useState("");
   const [diasAguinaldo, setDiasAguinaldo] = useState(15);
@@ -120,8 +120,8 @@ export default function Liquidaciones() {
   const [flash, setFlash] = useState(false);
   const resultRef = useRef<HTMLDivElement>(null);
 
-  const sd = salarioDiario === "" ? 0 : salarioDiario;
-  const formValid = sd > 0 && fechaIngreso !== "" && fechaBaja !== "";
+  const sd = parseFloat(salarioDiarioStr) || 0;
+  const formValid = sd > 0 && fechaIngreso.length > 0 && fechaBaja.length > 0;
 
   // --- Core calculation ---
   const calcular = useCallback(() => {
@@ -179,7 +179,7 @@ export default function Liquidaciones() {
 
   const limpiar = useCallback(() => {
     setTipo("despido_injustificado");
-    setSalarioDiario("");
+    setSalarioDiarioStr("");
     setFechaIngreso("");
     setFechaBaja("");
     setDiasAguinaldo(15);
@@ -287,7 +287,7 @@ export default function Liquidaciones() {
               </div>
               <div>
                 <label className={labelClass}>Salario base diario (MXN) <span className="text-brand">*</span></label>
-                <input type="number" min={0} placeholder="Ej: 450" value={salarioDiario} onChange={(e) => setSalarioDiario(e.target.value === "" ? "" : Number(e.target.value))} className={`${inputClass} tabular-nums`} />
+                <input type="text" inputMode="decimal" placeholder="Ej: 450" value={salarioDiarioStr} onChange={(e) => setSalarioDiarioStr(e.target.value)} className={`${inputClass} tabular-nums`} />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
