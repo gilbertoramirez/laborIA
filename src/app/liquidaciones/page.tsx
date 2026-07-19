@@ -1,13 +1,9 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useRef } from "react";
 import { Search, Plus, Download, SlidersHorizontal, Info, Calculator, RotateCcw } from "lucide-react";
 
-type TipoSeparacion =
-  | "despido_injustificado"
-  | "renuncia_voluntaria"
-  | "rescision_justificada";
-
+type TipoSeparacion = "despido_injustificado" | "renuncia_voluntaria" | "rescision_justificada";
 type AreaGeografica = "general" | "frontera";
 type TipoJornada = "diurna" | "nocturna" | "mixta";
 
@@ -59,21 +55,11 @@ function calcAntiguedad(ingreso: string, baja: string): Antiguedad {
   const d1 = new Date(ingreso);
   const d2 = new Date(baja);
   if (d2 <= d1) return { anios: 0, meses: 0, dias: 0, totalAnios: 0, aniosCompletos: 0 };
-
   let anios = d2.getFullYear() - d1.getFullYear();
   let meses = d2.getMonth() - d1.getMonth();
   let dias = d2.getDate() - d1.getDate();
-
-  if (dias < 0) {
-    meses--;
-    const lastMonth = new Date(d2.getFullYear(), d2.getMonth(), 0);
-    dias += lastMonth.getDate();
-  }
-  if (meses < 0) {
-    anios--;
-    meses += 12;
-  }
-
+  if (dias < 0) { meses--; dias += new Date(d2.getFullYear(), d2.getMonth(), 0).getDate(); }
+  if (meses < 0) { anios--; meses += 12; }
   const totalAnios = anios + meses / 12 + dias / 365.25;
   return { anios, meses, dias, totalAnios, aniosCompletos: anios };
 }
@@ -100,7 +86,6 @@ function formatFechaES(d: string): string {
 }
 
 export default function Liquidaciones() {
-  // --- Form state ---
   const [tipo, setTipo] = useState<TipoSeparacion>("despido_injustificado");
   const [salarioDiarioStr, setSalarioDiarioStr] = useState("");
   const [fechaIngreso, setFechaIngreso] = useState("");
@@ -114,28 +99,27 @@ export default function Liquidaciones() {
   const [nombreTrabajador, setNombreTrabajador] = useState("");
   const [nombrePatron, setNombrePatron] = useState("");
 
-  // --- Result state (only populated on click) ---
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const [pctNegociacion, setPctNegociacion] = useState(100);
-  const [flash, setFlash] = useState(false);
+  const [formError, setFormError] = useState("");
   const resultRef = useRef<HTMLDivElement>(null);
 
   const sd = parseFloat(salarioDiarioStr) || 0;
+  const totalNegociado = resultado ? Math.round(resultado.subtotal * (pctNegociacion / 100)) : 0;
 
-  const [formError, setFormError] = useState("");
-
-  // --- Core calculation ---
-  const calcular = useCallback(() => {
-    if (sd <= 0 || !fechaIngreso || !fechaBaja) {
+  function calcular() {
+    const salario = parseFloat(salarioDiarioStr);
+    if (!salario || salario <= 0 || !fechaIngreso || !fechaBaja) {
       setFormError("Completa salario diario, fecha de ingreso y fecha de separación.");
       return;
     }
     setFormError("");
+
     const antiguedad = calcAntiguedad(fechaIngreso, fechaBaja);
     const sm = SALARIOS_MINIMOS[areaGeo].valor;
     const primaVacDecimal = primaVacPct / 100;
     const factorIntegracion = 1 + diasAguinaldo / 365 + (diasVacaciones * primaVacDecimal) / 365;
-    const sdi = sd * factorIntegracion;
+    const sdi = salario * factorIntegracion;
     const topeSdi = Math.min(sdi, 2 * sm);
     const diasEnAnio = calcDiasEnAnio(fechaBaja);
 
@@ -144,7 +128,7 @@ export default function Liquidaciones() {
       const horasJornada = HORAS_JORNADA[tipoJornada].horas;
       const horasDobles = Math.min(horasExtraSemana, 9);
       const horasTriples = Math.max(0, horasExtraSemana - 9);
-      const salarioHora = sd / horasJornada;
+      const salarioHora = salario / horasJornada;
       const semanasTrabajadas = Math.round(antiguedad.totalAnios * 52);
       importeHorasExtra = Math.round((horasDobles * salarioHora * 2 + horasTriples * salarioHora * 3) * semanasTrabajadas);
     }
@@ -166,24 +150,21 @@ export default function Liquidaciones() {
       }
     }
 
-    conceptos.push({ nombre: "Aguinaldo proporcional", base: `SD × ${diasAguinaldo} días × (${diasEnAnio}/365)`, importe: Math.round(sd * diasAguinaldo * (diasEnAnio / 365)), fundamento: "Art. 87 LFT" });
-    conceptos.push({ nombre: "Vacaciones pendientes", base: `${diasVacaciones} días × SD (${formatMXNDec(sd)})`, importe: Math.round(sd * diasVacaciones), fundamento: "Art. 76 LFT" });
-    conceptos.push({ nombre: "Prima vacacional", base: `${primaVacPct}% de vacaciones pendientes`, importe: Math.round(sd * diasVacaciones * primaVacDecimal), fundamento: "Art. 80 LFT" });
+    conceptos.push({ nombre: "Aguinaldo proporcional", base: `SD × ${diasAguinaldo} días × (${diasEnAnio}/365)`, importe: Math.round(salario * diasAguinaldo * (diasEnAnio / 365)), fundamento: "Art. 87 LFT" });
+    conceptos.push({ nombre: "Vacaciones pendientes", base: `${diasVacaciones} días × SD (${formatMXNDec(salario)})`, importe: Math.round(salario * diasVacaciones), fundamento: "Art. 76 LFT" });
+    conceptos.push({ nombre: "Prima vacacional", base: `${primaVacPct}% de vacaciones pendientes`, importe: Math.round(salario * diasVacaciones * primaVacDecimal), fundamento: "Art. 80 LFT" });
 
     if (importeHorasExtra > 0) {
       conceptos.push({ nombre: "Horas extra reclamadas", base: `${horasExtraSemana} hrs/sem × ${Math.round(antiguedad.totalAnios * 52)} semanas`, importe: importeHorasExtra, fundamento: "Arts. 66-68 LFT" });
     }
 
     const subtotal = conceptos.reduce((s, c) => s + c.importe, 0);
-
     setResultado({ sdi, factorIntegracion, antiguedad, conceptos, subtotal, topeSdi, sm, timestamp: Date.now() });
     setPctNegociacion(100);
-    setFlash(true);
-    setTimeout(() => setFlash(false), 600);
     setTimeout(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
-  }, [tipo, sd, fechaIngreso, fechaBaja, diasAguinaldo, primaVacPct, diasVacaciones, areaGeo, horasExtraSemana, tipoJornada]);
+  }
 
-  const limpiar = useCallback(() => {
+  function limpiar() {
     setTipo("despido_injustificado");
     setSalarioDiarioStr("");
     setFechaIngreso("");
@@ -199,12 +180,9 @@ export default function Liquidaciones() {
     setResultado(null);
     setPctNegociacion(100);
     setFormError("");
-  }, []);
+  }
 
-  const totalNegociado = resultado ? Math.round(resultado.subtotal * (pctNegociacion / 100)) : 0;
-
-  // --- PDF ---
-  const generarPDF = useCallback(() => {
+  function generarPDF() {
     if (!resultado) return;
     const { antiguedad, sdi, factorIntegracion, conceptos, subtotal, sm } = resultado;
     const fechaHoy = new Date().toLocaleDateString("es-MX", { day: "2-digit", month: "long", year: "numeric" });
@@ -244,14 +222,13 @@ export default function Liquidaciones() {
     if (win) {
       win.addEventListener("load", () => { setTimeout(() => { win.print(); URL.revokeObjectURL(url); }, 500); });
     }
-  }, [resultado, tipo, fechaIngreso, fechaBaja, sd, areaGeo, nombreTrabajador, nombrePatron, pctNegociacion, totalNegociado]);
+  }
 
   const inputClass = "w-full px-3.5 py-2.5 border border-border rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-colors";
   const labelClass = "block text-sm text-text-secondary mb-1.5";
 
   return (
     <div className="p-8 max-w-[1400px] mx-auto">
-      {/* Header */}
       <div className="flex items-start justify-between mb-8 animate-fade-in">
         <div>
           <h1 className="font-display text-3xl text-text-primary">Calculadora de liquidaciones</h1>
@@ -272,7 +249,6 @@ export default function Liquidaciones() {
       <div className="grid grid-cols-12 gap-6 animate-fade-in animate-fade-in-delay-1">
         {/* LEFT: Inputs */}
         <div className="col-span-5 space-y-5">
-          {/* Datos generales */}
           <div className="bg-white rounded-xl border border-border p-6">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-text-muted mb-5">Datos de la relación laboral</h2>
             <div className="space-y-4">
@@ -309,7 +285,6 @@ export default function Liquidaciones() {
             </div>
           </div>
 
-          {/* Prestaciones */}
           <div className="bg-white rounded-xl border border-border p-6">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-text-muted mb-5">Prestaciones y área geográfica</h2>
             <div className="space-y-4">
@@ -336,7 +311,6 @@ export default function Liquidaciones() {
             </div>
           </div>
 
-          {/* Horas extra */}
           <div className="bg-white rounded-xl border border-border p-6">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-text-muted mb-5">Horas extra reclamadas</h2>
             <div className="space-y-4">
@@ -363,13 +337,13 @@ export default function Liquidaciones() {
             </div>
           </div>
 
-          {/* Action buttons */}
           {formError && (
             <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2.5">{formError}</p>
           )}
           <div className="flex gap-3">
             <button
-              onClick={calcular}
+              type="button"
+              onClick={() => calcular()}
               className="flex-1 flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl text-sm font-semibold transition-all active:scale-[0.98] shadow-lg bg-gradient-to-r from-brand-dark to-brand text-white hover:shadow-xl shadow-brand/25 cursor-pointer"
             >
               <Calculator size={18} />
@@ -377,7 +351,8 @@ export default function Liquidaciones() {
             </button>
             {resultado && (
               <button
-                onClick={limpiar}
+                type="button"
+                onClick={() => limpiar()}
                 className="flex items-center justify-center gap-2 px-4 py-3.5 border border-border rounded-xl text-sm text-text-secondary hover:bg-stone-50 transition-colors"
               >
                 <RotateCcw size={16} />
@@ -390,14 +365,11 @@ export default function Liquidaciones() {
         {/* RIGHT: Results */}
         <div className="col-span-7 space-y-5" ref={resultRef}>
           {!resultado ? (
-            /* Empty state */
             <div className="bg-white rounded-xl border border-border p-12 flex flex-col items-center justify-center min-h-[500px] text-center">
               <div className="w-16 h-16 rounded-2xl bg-stone-100 flex items-center justify-center mb-5">
                 <Calculator size={28} className="text-text-muted" />
               </div>
-              <h3 className="font-display text-xl text-text-primary mb-2">
-                Ingresa los datos del caso
-              </h3>
+              <h3 className="font-display text-xl text-text-primary mb-2">Ingresa los datos del caso</h3>
               <p className="text-sm text-text-muted max-w-sm leading-relaxed">
                 Completa el salario diario y las fechas de la relación laboral, luego presiona
                 <span className="font-semibold text-brand"> Calcular liquidación</span> para
@@ -421,7 +393,7 @@ export default function Liquidaciones() {
           ) : (
             <>
               {/* Computed values banner */}
-              <div className={`bg-white rounded-xl border border-border p-5 grid grid-cols-4 gap-4 transition-all duration-500 ${flash ? "ring-2 ring-brand/30 bg-brand-50" : ""}`}>
+              <div className="bg-white rounded-xl border border-border p-5 grid grid-cols-4 gap-4">
                 <div>
                   <p className="text-[10px] uppercase tracking-wider text-text-muted">Antigüedad</p>
                   <p className="text-sm font-semibold tabular-nums mt-0.5">{resultado.antiguedad.anios}a {resultado.antiguedad.meses}m {resultado.antiguedad.dias}d</p>
@@ -444,13 +416,13 @@ export default function Liquidaciones() {
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <h2 className="text-xs font-semibold uppercase tracking-wider text-text-muted">Desglose de la liquidación</h2>
-                  <button onClick={generarPDF} className="inline-flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm text-text-secondary hover:bg-stone-50 transition-colors">
+                  <button type="button" onClick={() => generarPDF()} className="inline-flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm text-text-secondary hover:bg-stone-50 transition-colors">
                     <Download size={15} />
                     Exportar PDF
                   </button>
                 </div>
 
-                <div className={`bg-white rounded-xl border border-border overflow-hidden transition-all duration-500 ${flash ? "ring-2 ring-brand/30" : ""}`}>
+                <div className="bg-white rounded-xl border border-border overflow-hidden">
                   <table className="w-full">
                     <thead>
                       <tr className="border-b border-border">
@@ -487,77 +459,44 @@ export default function Liquidaciones() {
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-brand-light text-brand font-semibold ml-1">INTERACTIVO</span>
                 </div>
 
-                {/* Slider */}
                 <div className="flex items-center gap-6 mb-5">
                   <div className="flex-1 relative">
-                    <input
-                      type="range"
-                      min={10}
-                      max={100}
-                      step={1}
-                      value={pctNegociacion}
-                      onChange={(e) => setPctNegociacion(Number(e.target.value))}
-                      className="w-full h-2 appearance-none rounded-full bg-stone-200 accent-brand cursor-pointer"
-                    />
+                    <input type="range" min={10} max={100} step={1} value={pctNegociacion} onChange={(e) => setPctNegociacion(Number(e.target.value))} className="w-full h-2 appearance-none rounded-full bg-stone-200 accent-brand cursor-pointer" />
                     <div className="flex justify-between text-[10px] text-text-muted mt-1">
-                      <span>10%</span>
-                      <span>50%</span>
-                      <span>100%</span>
+                      <span>10%</span><span>50%</span><span>100%</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 bg-stone-50 rounded-lg px-3 py-2">
-                    <input
-                      type="number"
-                      min={10}
-                      max={100}
-                      value={pctNegociacion}
-                      onChange={(e) => setPctNegociacion(Math.min(100, Math.max(10, Number(e.target.value))))}
-                      className="w-12 bg-transparent text-sm text-center tabular-nums font-bold focus:outline-none"
-                    />
+                    <input type="number" min={10} max={100} value={pctNegociacion} onChange={(e) => setPctNegociacion(Math.min(100, Math.max(10, Number(e.target.value))))} className="w-12 bg-transparent text-sm text-center tabular-nums font-bold focus:outline-none" />
                     <span className="text-sm text-text-muted font-semibold">%</span>
                   </div>
                 </div>
 
-                {/* Quick presets */}
                 <div className="flex gap-2 mb-5">
                   {[100, 80, 70, 60, 50].map((pct) => (
-                    <button
-                      key={pct}
-                      onClick={() => setPctNegociacion(pct)}
-                      className={`px-3.5 py-1.5 text-xs rounded-lg font-medium transition-all ${
-                        pctNegociacion === pct
-                          ? "bg-brand text-white shadow-sm"
-                          : "bg-stone-100 text-text-secondary hover:bg-stone-200"
-                      }`}
-                    >
+                    <button key={pct} type="button" onClick={() => setPctNegociacion(pct)} className={`px-3.5 py-1.5 text-xs rounded-lg font-medium transition-all ${pctNegociacion === pct ? "bg-brand text-white shadow-sm" : "bg-stone-100 text-text-secondary hover:bg-stone-200"}`}>
                       {pct}%
                     </button>
                   ))}
                 </div>
 
-                {/* Bar chart */}
                 <div className="space-y-2.5 mb-6">
                   {resultado.conceptos.map((c, i) => {
                     const maxImporte = Math.max(...resultado.conceptos.map((x) => x.importe));
                     const barFull = maxImporte > 0 ? (c.importe / maxImporte) * 100 : 0;
                     const adjusted = Math.round(c.importe * (pctNegociacion / 100));
                     const barAdj = maxImporte > 0 ? (adjusted / maxImporte) * 100 : 0;
-
                     return (
                       <div key={i}>
                         <div className="flex items-center justify-between text-xs mb-1">
                           <span className="text-text-secondary truncate max-w-[220px]">{c.nombre}</span>
                           <div className="flex items-center gap-3 tabular-nums shrink-0">
-                            {pctNegociacion < 100 && (
-                              <span className="text-text-muted line-through text-[11px]">{formatMXN(c.importe)}</span>
-                            )}
+                            {pctNegociacion < 100 && <span className="text-text-muted line-through text-[11px]">{formatMXN(c.importe)}</span>}
                             <span className="font-semibold text-text-primary">{formatMXN(adjusted)}</span>
                           </div>
                         </div>
                         <div className="h-3.5 bg-stone-100 rounded-full overflow-hidden relative">
-                          {pctNegociacion < 100 && (
-                            <div className="absolute inset-y-0 left-0 bg-stone-200 rounded-full transition-all duration-300 ease-out" style={{ width: `${barFull}%` }} />
-                          )}
+                          {pctNegociacion < 100 && <div className="absolute inset-y-0 left-0 bg-stone-200 rounded-full transition-all duration-300 ease-out" style={{ width: `${barFull}%` }} />}
                           <div className="absolute inset-y-0 left-0 bg-brand rounded-full transition-all duration-300 ease-out" style={{ width: `${barAdj}%` }} />
                         </div>
                       </div>
@@ -565,19 +504,14 @@ export default function Liquidaciones() {
                   })}
                 </div>
 
-                {/* Negotiated total */}
                 <div className={`flex items-center justify-between p-5 rounded-xl transition-colors ${pctNegociacion < 100 ? "bg-amber-50 border border-amber-200" : "bg-stone-50"}`}>
                   <div>
                     <p className="text-xs font-semibold text-text-muted uppercase tracking-wider">Total negociado</p>
                     {pctNegociacion < 100 && (
-                      <p className="text-xs text-text-muted mt-0.5">
-                        Descuento de {formatMXN(resultado.subtotal - totalNegociado)} ({100 - pctNegociacion}% menos)
-                      </p>
+                      <p className="text-xs text-text-muted mt-0.5">Descuento de {formatMXN(resultado.subtotal - totalNegociado)} ({100 - pctNegociacion}% menos)</p>
                     )}
                   </div>
-                  <p className={`text-3xl font-bold tabular-nums ${pctNegociacion < 100 ? "text-amber-700" : "text-text-primary"}`}>
-                    {formatMXN(totalNegociado)}
-                  </p>
+                  <p className={`text-3xl font-bold tabular-nums ${pctNegociacion < 100 ? "text-amber-700" : "text-text-primary"}`}>{formatMXN(totalNegociado)}</p>
                 </div>
 
                 <div className="flex items-start gap-2 mt-4 p-3 bg-brand-50 rounded-lg">
