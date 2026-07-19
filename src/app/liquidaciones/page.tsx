@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react";
 import { Search, Plus, Download, SlidersHorizontal, Info, Calculator, RotateCcw } from "lucide-react";
+import Link from "next/link";
 
 type TipoSeparacion = "despido_injustificado" | "renuncia_voluntaria" | "rescision_justificada";
 type AreaGeografica = "general" | "frontera";
@@ -102,10 +103,12 @@ export default function Liquidaciones() {
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const [pctNegociacion, setPctNegociacion] = useState(100);
   const [formError, setFormError] = useState("");
+  const [showHorasExtra, setShowHorasExtra] = useState(false);
   const resultRef = useRef<HTMLDivElement>(null);
 
   const sd = parseFloat(salarioDiarioStr) || 0;
   const totalNegociado = resultado ? Math.round(resultado.subtotal * (pctNegociacion / 100)) : 0;
+  const canCalculate = sd > 0 && !!fechaIngreso && !!fechaBaja;
 
   function calcular() {
     const salario = parseFloat(salarioDiarioStr);
@@ -175,6 +178,7 @@ export default function Liquidaciones() {
     setAreaGeo("general");
     setHorasExtraSemana(0);
     setTipoJornada("diurna");
+    setShowHorasExtra(false);
     setNombreTrabajador("");
     setNombrePatron("");
     setResultado(null);
@@ -239,10 +243,10 @@ export default function Liquidaciones() {
             <Search size={16} />
             Buscar
           </button>
-          <button className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand text-white rounded-lg text-sm font-medium hover:bg-brand-dark transition-colors active:scale-[0.98]">
+          <Link href="/casos?nuevo=1" className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand text-white rounded-lg text-sm font-medium hover:bg-brand-dark transition-colors active:scale-[0.98]">
             <Plus size={16} />
             Nuevo caso
-          </button>
+          </Link>
         </div>
       </div>
 
@@ -311,53 +315,68 @@ export default function Liquidaciones() {
             </div>
           </div>
 
-          <div className="bg-white rounded-xl border border-border p-6">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-text-muted mb-5">Horas extra reclamadas</h2>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={labelClass}>Horas extra / semana</label>
-                  <input type="number" min={0} value={horasExtraSemana || ""} placeholder="0" onChange={(e) => setHorasExtraSemana(Number(e.target.value) || 0)} className={`${inputClass} tabular-nums`} />
+          <div className="bg-white rounded-xl border border-border">
+            <button
+              type="button"
+              onClick={() => setShowHorasExtra(!showHorasExtra)}
+              className="w-full flex items-center justify-between px-6 py-4 text-left cursor-pointer"
+            >
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-text-muted">Horas extra reclamadas</h2>
+              <span className={`text-xs text-text-muted transition-transform ${showHorasExtra ? "rotate-180" : ""}`}>▼</span>
+            </button>
+            {showHorasExtra && (
+              <div className="px-6 pb-6 space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={labelClass}>Horas extra / semana</label>
+                    <input type="number" min={0} value={horasExtraSemana || ""} placeholder="0" onChange={(e) => setHorasExtraSemana(Number(e.target.value) || 0)} className={`${inputClass} tabular-nums`} />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Tipo de jornada</label>
+                    <select value={tipoJornada} onChange={(e) => setTipoJornada(e.target.value as TipoJornada)} className={inputClass}>
+                      {Object.entries(HORAS_JORNADA).map(([k, v]) => (<option key={k} value={k}>{v.label}</option>))}
+                    </select>
+                  </div>
                 </div>
-                <div>
-                  <label className={labelClass}>Tipo de jornada</label>
-                  <select value={tipoJornada} onChange={(e) => setTipoJornada(e.target.value as TipoJornada)} className={inputClass}>
-                    {Object.entries(HORAS_JORNADA).map(([k, v]) => (<option key={k} value={k}>{v.label}</option>))}
-                  </select>
-                </div>
+                {horasExtraSemana > 0 && sd > 0 && (
+                  <div className="p-3 bg-stone-50 rounded-lg text-xs text-text-secondary space-y-1">
+                    <p><span className="font-medium">Dobles:</span> {Math.min(horasExtraSemana, 9)} hrs × 2 = {formatMXNDec(Math.min(horasExtraSemana, 9) * (sd / HORAS_JORNADA[tipoJornada].horas) * 2)}/sem</p>
+                    {horasExtraSemana > 9 && (
+                      <p><span className="font-medium">Triples:</span> {horasExtraSemana - 9} hrs × 3 = {formatMXNDec((horasExtraSemana - 9) * (sd / HORAS_JORNADA[tipoJornada].horas) * 3)}/sem</p>
+                    )}
+                  </div>
+                )}
               </div>
-              {horasExtraSemana > 0 && sd > 0 && (
-                <div className="p-3 bg-stone-50 rounded-lg text-xs text-text-secondary space-y-1">
-                  <p><span className="font-medium">Dobles:</span> {Math.min(horasExtraSemana, 9)} hrs × 2 = {formatMXNDec(Math.min(horasExtraSemana, 9) * (sd / HORAS_JORNADA[tipoJornada].horas) * 2)}/sem</p>
-                  {horasExtraSemana > 9 && (
-                    <p><span className="font-medium">Triples:</span> {horasExtraSemana - 9} hrs × 3 = {formatMXNDec((horasExtraSemana - 9) * (sd / HORAS_JORNADA[tipoJornada].horas) * 3)}/sem</p>
-                  )}
-                </div>
-              )}
-            </div>
+            )}
           </div>
 
           {formError && (
             <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2.5">{formError}</p>
           )}
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={() => calcular()}
-              className="flex-1 flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl text-sm font-semibold transition-all active:scale-[0.98] shadow-lg bg-gradient-to-r from-brand-dark to-brand text-white hover:shadow-xl shadow-brand/25 cursor-pointer"
-            >
-              <Calculator size={18} />
-              {resultado ? "Recalcular liquidación" : "Calcular liquidación"}
-            </button>
-            {resultado && (
+          <div className="sticky bottom-0 bg-gradient-to-t from-surface via-surface to-transparent pt-4 pb-1 -mx-1 px-1">
+            <div className="flex gap-3">
               <button
                 type="button"
-                onClick={() => limpiar()}
-                className="flex items-center justify-center gap-2 px-4 py-3.5 border border-border rounded-xl text-sm text-text-secondary hover:bg-stone-50 transition-colors"
+                onClick={() => calcular()}
+                disabled={!canCalculate}
+                className={`flex-1 flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl text-sm font-semibold transition-all ${canCalculate ? "active:scale-[0.98] shadow-lg bg-gradient-to-r from-brand-dark to-brand text-white hover:shadow-xl shadow-brand/25 cursor-pointer" : "bg-stone-200 text-stone-400 cursor-not-allowed"}`}
               >
-                <RotateCcw size={16} />
-                Limpiar
+                <Calculator size={18} />
+                {resultado ? "Recalcular liquidación" : "Calcular liquidación"}
               </button>
+              {resultado && (
+                <button
+                  type="button"
+                  onClick={() => limpiar()}
+                  className="flex items-center justify-center gap-2 px-4 py-3.5 border border-border rounded-xl text-sm text-text-secondary hover:bg-stone-50 transition-colors"
+                >
+                  <RotateCcw size={16} />
+                  Limpiar
+                </button>
+              )}
+            </div>
+            {!canCalculate && !formError && (
+              <p className="text-xs text-text-muted mt-2 text-center">Completa salario, fecha de ingreso y fecha de separación</p>
             )}
           </div>
         </div>
