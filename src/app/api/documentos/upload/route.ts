@@ -1,9 +1,51 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase";
-import { generateEmbeddings } from "@/lib/embeddings";
-import { parsePDF, parsePlainText } from "@/lib/pdf-parser";
 
 export const maxDuration = 60;
+
+interface DocumentChunk {
+  content: string;
+  metadata: { chunk_index: number; source_filename: string };
+}
+
+function chunkText(
+  text: string,
+  filename: string,
+  maxChunkSize = 1000,
+  overlap = 200
+): DocumentChunk[] {
+  const paragraphs = text
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter((p) => p.length > 30);
+
+  const chunks: DocumentChunk[] = [];
+  let currentChunk = "";
+  let chunkIndex = 0;
+
+  for (const paragraph of paragraphs) {
+    if (currentChunk.length + paragraph.length > maxChunkSize && currentChunk) {
+      chunks.push({
+        content: currentChunk.trim(),
+        metadata: { chunk_index: chunkIndex, source_filename: filename },
+      });
+      chunkIndex++;
+      const words = currentChunk.split(" ");
+      const overlapWords = words.slice(-Math.floor(overlap / 5));
+      currentChunk = overlapWords.join(" ") + "\n\n" + paragraph;
+    } else {
+      currentChunk += (currentChunk ? "\n\n" : "") + paragraph;
+    }
+  }
+
+  if (currentChunk.trim()) {
+    chunks.push({
+      content: currentChunk.trim(),
+      metadata: { chunk_index: chunkIndex, source_filename: filename },
+    });
+  }
+
+  return chunks;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,16 +53,21 @@ export async function POST(request: NextRequest) {
     const file = formData.get("file") as File | null;
 
     if (!file) {
-      return NextResponse.json({ error: "No se envió archivo" }, { status: 400 });
+      return NextResponse.json(
+        { error: "No se envió archivo" },
+        { status: 400 }
+      );
     }
 
-    const allowedTypes = [
-      "application/pdf",
-      "text/plain",
-      "text/markdown",
-    ];
+    const isPdf =
+      file.type === "application/pdf" || file.name.endsWith(".pdf");
+    const isTxt =
+      file.type === "text/plain" ||
+      file.type === "text/markdown" ||
+      file.name.endsWith(".txt") ||
+      file.name.endsWith(".md");
 
-    if (!allowedTypes.includes(file.type) && !file.name.endsWith(".txt") && !file.name.endsWith(".md")) {
+    if (!isPdf && !isTxt) {
       return NextResponse.json(
         { error: "Formato no soportado. Usa PDF o TXT." },
         { status: 400 }
@@ -30,28 +77,35 @@ export async function POST(request: NextRequest) {
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
-    let chunks;
+    let chunks: DocumentChunk[];
     try {
-      if (file.type === "application/pdf") {
-        chunks = await parsePDF(buffer, file.name);
+      if (isPdf) {
+        const { PDFParse } = await import("pdf-parse");
+        const parser = new PDFParse({ data: new Uint8Array(buffer) });
+        const result = await parser.getText();
+        chunks = chunkText(result.text, file.name);
       } else {
         const text = new TextDecoder().decode(buffer);
-        chunks = parsePlainText(text, file.name);
+        chunks = chunkText(text, file.name);
       }
     } catch (parseErr) {
       console.error("Parse error:", parseErr);
       return NextResponse.json(
-        { error: "Error al leer el archivo. Verifica que no esté dañado." },
+        {
+          error: `Error al leer el archivo: ${parseErr instanceof Error ? parseErr.message : "formato no válido"}`,
+        },
         { status: 400 }
       );
     }
 
     if (chunks.length === 0) {
       return NextResponse.json(
-        { error: "No se pudo extraer texto del archivo" },
+        { error: "No se pudo extraer texto del archivo. El documento puede estar vacío o ser solo imágenes." },
         { status: 400 }
       );
     }
+
+    const { generateEmbeddings } = await import("@/lib/embeddings");
 
     const texts = chunks.map((c) => c.content);
     let embeddings: number[][];
@@ -62,15 +116,21 @@ export async function POST(request: NextRequest) {
       const msg = embErr instanceof Error ? embErr.message : String(embErr);
       if (msg.includes("abort") || msg.includes("timeout")) {
         return NextResponse.json(
-          { error: "Timeout generando embeddings. Intenta con un archivo más corto o reintenta." },
+          {
+            error: "Timeout generando embeddings. Intenta con un archivo más corto o reintenta.",
+          },
           { status: 504 }
         );
       }
       return NextResponse.json(
-        { error: "El modelo de IA está cargando. Intenta de nuevo en 30 segundos." },
+        {
+          error: "El modelo de IA está cargando. Intenta de nuevo en 30 segundos.",
+        },
         { status: 503 }
       );
     }
+
+    const { getSupabaseAdmin } = await import("@/lib/supabase");
 
     const rows = chunks.map((chunk, i) => ({
       content: chunk.content,
