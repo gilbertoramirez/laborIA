@@ -15,6 +15,8 @@ import {
   Globe,
   ChevronLeft,
   ChevronRight,
+  CheckSquare,
+  Square,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -72,6 +74,8 @@ export default function Jurisprudencia() {
   const [saveStatuses, setSaveStatuses] = useState<Record<string, SaveStatus>>(
     {}
   );
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchSaving, setBatchSaving] = useState(false);
 
   async function searchExtern(page: number) {
     if (!query.trim() || externSearching) return;
@@ -80,6 +84,7 @@ export default function Jurisprudencia() {
     setExternSearched(true);
     setExternError("");
     setSelectedTesis(null);
+    setSelectedIds(new Set());
 
     try {
       const res = await fetch("/api/jurisprudencia/buscar", {
@@ -140,9 +145,26 @@ export default function Jurisprudencia() {
     else handleIaSearch(e);
   }
 
-  async function fetchTextoAndSave(tesis: TesisExterna) {
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (selectedIds.size === externResults.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(externResults.map((t) => t.id)));
+    }
+  }
+
+  async function saveSingleTesis(tesis: TesisExterna) {
     const key = tesis.id;
-    let texto = tesis.texto;
+    let texto = tesis.texto || tesis.textoPublicacion;
 
     if (!texto) {
       setSaveStatuses((prev) => ({ ...prev, [key]: "loading-text" }));
@@ -190,11 +212,41 @@ export default function Jurisprudencia() {
     }
   }
 
+  async function saveSelected() {
+    if (selectedIds.size === 0 || batchSaving) return;
+    setBatchSaving(true);
+
+    const toSave = externResults.filter(
+      (t) =>
+        selectedIds.has(t.id) &&
+        !["saved", "exists", "saving", "loading-text"].includes(saveStatuses[t.id] || "idle")
+    );
+
+    for (const tesis of toSave) {
+      await saveSingleTesis(tesis);
+    }
+
+    setBatchSaving(false);
+    setSelectedIds(new Set());
+  }
+
+  function getPreviewText(t: TesisExterna): string {
+    return t.textoPublicacion || t.texto || t.localizacion || "";
+  }
+
   function similarityColor(s: number) {
     if (s >= 0.7) return "text-brand bg-brand-light";
     if (s >= 0.5) return "text-amber-700 bg-amber-50";
     return "text-text-muted bg-stone-100";
   }
+
+  const savedCount = externResults.filter(
+    (t) => saveStatuses[t.id] === "saved" || saveStatuses[t.id] === "exists"
+  ).length;
+  const selectableSelected = [...selectedIds].filter((id) => {
+    const s = saveStatuses[id] || "idle";
+    return s === "idle" || s === "error";
+  }).length;
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
@@ -307,7 +359,7 @@ export default function Jurisprudencia() {
                 </div>
                 <div className="flex items-center gap-2">
                   <Save size={14} />
-                  <span>2. Guarda las útiles</span>
+                  <span>2. Selecciona y guarda</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Sparkles size={14} />
@@ -338,59 +390,159 @@ export default function Jurisprudencia() {
 
           {externResults.length > 0 && (
             <div className="animate-fade-in">
-              <p className="text-xs text-text-muted mb-4">
-                {externTotal.toLocaleString()} tesis encontradas &middot;
-                Página {externPage} de {externTotalPages}
-              </p>
+              {/* Results header with batch actions */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-4">
+                  <p className="text-xs text-text-muted">
+                    {externTotal.toLocaleString()} tesis encontradas &middot;
+                    Página {externPage} de {externTotalPages}
+                  </p>
+                  {savedCount > 0 && (
+                    <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 px-2 py-0.5 rounded-full">
+                      <CheckCircle2 size={12} />
+                      {savedCount} guardadas
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={toggleSelectAll}
+                    className="inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-text-secondary transition-colors"
+                  >
+                    {selectedIds.size === externResults.length ? (
+                      <CheckSquare size={14} className="text-brand" />
+                    ) : (
+                      <Square size={14} />
+                    )}
+                    {selectedIds.size === externResults.length
+                      ? "Deseleccionar todo"
+                      : "Seleccionar todo"}
+                  </button>
+                  {selectedIds.size > 0 && (
+                    <button
+                      onClick={saveSelected}
+                      disabled={batchSaving || selectableSelected === 0}
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-brand text-white rounded-lg text-xs font-medium hover:bg-brand-dark transition-colors active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {batchSaving ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <Save size={14} />
+                      )}
+                      {batchSaving
+                        ? "Guardando..."
+                        : `Guardar ${selectableSelected} seleccionada${selectableSelected !== 1 ? "s" : ""}`}
+                    </button>
+                  )}
+                </div>
+              </div>
+
               <div className="grid grid-cols-5 gap-6">
                 <div className="col-span-3 space-y-3">
-                  {externResults.map((t) => {
+                  {externResults.map((t, idx) => {
                     const status = saveStatuses[t.id] || "idle";
+                    const isSelected = selectedIds.has(t.id);
+                    const isSaved = status === "saved" || status === "exists";
+                    const preview = getPreviewText(t);
+                    const resultNum = (externPage - 1) * 10 + idx + 1;
+
                     return (
                       <div
                         key={t.id}
-                        onClick={() => setSelectedTesis(t)}
-                        className={`bg-white rounded-xl border p-5 hover:shadow-sm transition-all cursor-pointer ${
+                        className={`bg-white rounded-xl border p-5 transition-all ${
                           selectedTesis && "id" in selectedTesis && selectedTesis.id === t.id
                             ? "border-brand shadow-sm"
-                            : "border-border"
+                            : isSelected
+                              ? "border-brand/40 bg-brand/[0.02]"
+                              : "border-border hover:shadow-sm"
                         }`}
                       >
-                        <div className="flex items-start justify-between gap-3 mb-2">
-                          <div className="flex items-center gap-2 text-xs text-text-muted flex-wrap">
-                            <span>{t.epoca}</span>
-                            <span>&middot;</span>
-                            <span>{t.instanciaAbr}</span>
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                                t.tipo === "Jurisprudencia"
-                                  ? "bg-brand-light text-brand"
-                                  : "bg-stone-100 text-text-secondary"
-                              }`}
+                        <div className="flex items-start gap-3">
+                          {/* Checkbox + number */}
+                          <div className="flex items-center gap-2 pt-0.5 shrink-0">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleSelect(t.id);
+                              }}
+                              className="text-text-muted hover:text-brand transition-colors"
                             >
-                              {t.tipo}
+                              {isSelected ? (
+                                <CheckSquare size={18} className="text-brand" />
+                              ) : isSaved ? (
+                                <CheckCircle2 size={18} className="text-green-600" />
+                              ) : (
+                                <Square size={18} />
+                              )}
+                            </button>
+                            <span className="text-xs font-mono text-text-muted w-5 text-right">
+                              {resultNum}
                             </span>
                           </div>
-                          <SaveButton
-                            status={status}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (status === "idle" || status === "error")
-                                fetchTextoAndSave(t);
-                            }}
-                          />
-                        </div>
-                        <h3 className="text-sm font-semibold text-text-primary mb-1.5 leading-snug">
-                          {t.rubro}
-                        </h3>
-                        <div className="flex items-center gap-3 text-[10px] text-text-muted mt-2">
-                          <span className="font-mono">IUS: {t.ius}</span>
-                          {t.claveTesis && (
-                            <>
+
+                          {/* Content */}
+                          <div
+                            className="flex-1 min-w-0 cursor-pointer"
+                            onClick={() => setSelectedTesis(t)}
+                          >
+                            <div className="flex items-center gap-2 text-xs text-text-muted flex-wrap mb-1.5">
+                              <span>{t.epoca}</span>
                               <span>&middot;</span>
-                              <span>{t.claveTesis}</span>
-                            </>
-                          )}
+                              <span>{t.instanciaAbr}</span>
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                  t.tipo === "Jurisprudencia"
+                                    ? "bg-brand-light text-brand"
+                                    : "bg-stone-100 text-text-secondary"
+                                }`}
+                              >
+                                {t.tipo}
+                              </span>
+                              {isSaved && (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-green-50 text-green-700">
+                                  Guardada
+                                </span>
+                              )}
+                            </div>
+
+                            <h3 className="text-sm font-semibold text-text-primary mb-1.5 leading-snug">
+                              {t.rubro}
+                            </h3>
+
+                            {preview && (
+                              <p className="text-xs text-text-secondary leading-relaxed line-clamp-3 mb-2">
+                                {preview}
+                              </p>
+                            )}
+
+                            <div className="flex items-center gap-3 text-[10px] text-text-muted">
+                              <span className="font-mono">IUS: {t.ius}</span>
+                              {t.claveTesis && (
+                                <>
+                                  <span>&middot;</span>
+                                  <span>{t.claveTesis}</span>
+                                </>
+                              )}
+                              {t.fechaPublicacion && (
+                                <>
+                                  <span>&middot;</span>
+                                  <span>{t.fechaPublicacion}</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Individual save button */}
+                          <div className="shrink-0">
+                            <SaveButton
+                              status={status}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (status === "idle" || status === "error")
+                                  saveSingleTesis(t);
+                              }}
+                            />
+                          </div>
                         </div>
                       </div>
                     );
@@ -469,7 +621,7 @@ export default function Jurisprudencia() {
               </p>
               <div className="grid grid-cols-5 gap-6">
                 <div className="col-span-3 space-y-3">
-                  {iaResults.map((t) => (
+                  {iaResults.map((t, idx) => (
                     <button
                       key={t.id}
                       onClick={() => setSelectedTesis(t)}
@@ -481,46 +633,53 @@ export default function Jurisprudencia() {
                           : "border-border"
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-4 mb-2">
-                        <div className="flex items-center gap-2 text-xs text-text-muted">
-                          {t.epoca && <span>{t.epoca}</span>}
-                          {t.instancia && (
-                            <>
-                              <span>&middot;</span>
-                              <span>{t.instancia}</span>
-                            </>
-                          )}
-                          {t.tipo && (
+                      <div className="flex items-start gap-3">
+                        <span className="text-xs font-mono text-text-muted w-5 text-right pt-0.5 shrink-0">
+                          {idx + 1}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-4 mb-2">
+                            <div className="flex items-center gap-2 text-xs text-text-muted">
+                              {t.epoca && <span>{t.epoca}</span>}
+                              {t.instancia && (
+                                <>
+                                  <span>&middot;</span>
+                                  <span>{t.instancia}</span>
+                                </>
+                              )}
+                              {t.tipo && (
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                    t.tipo === "Jurisprudencia"
+                                      ? "bg-brand-light text-brand"
+                                      : "bg-stone-100 text-text-secondary"
+                                  }`}
+                                >
+                                  {t.tipo}
+                                </span>
+                              )}
+                            </div>
                             <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                                t.tipo === "Jurisprudencia"
-                                  ? "bg-brand-light text-brand"
-                                  : "bg-stone-100 text-text-secondary"
-                              }`}
+                              className={`shrink-0 px-2 py-0.5 rounded text-xs font-bold tabular-nums ${similarityColor(
+                                t.similarity
+                              )}`}
                             >
-                              {t.tipo}
+                              {Math.round(t.similarity * 100)}%
                             </span>
+                          </div>
+                          <h3 className="text-sm font-semibold text-text-primary mb-1.5 leading-snug">
+                            {t.rubro}
+                          </h3>
+                          <p className="text-xs text-text-secondary leading-relaxed line-clamp-3">
+                            {t.texto}
+                          </p>
+                          {t.registro && (
+                            <p className="text-[10px] text-text-muted mt-2 font-mono">
+                              IUS: {t.registro}
+                            </p>
                           )}
                         </div>
-                        <span
-                          className={`shrink-0 px-2 py-0.5 rounded text-xs font-bold tabular-nums ${similarityColor(
-                            t.similarity
-                          )}`}
-                        >
-                          {Math.round(t.similarity * 100)}%
-                        </span>
                       </div>
-                      <h3 className="text-sm font-semibold text-text-primary mb-1.5 leading-snug">
-                        {t.rubro}
-                      </h3>
-                      <p className="text-xs text-text-secondary leading-relaxed line-clamp-3">
-                        {t.texto}
-                      </p>
-                      {t.registro && (
-                        <p className="text-[10px] text-text-muted mt-2 font-mono">
-                          IUS: {t.registro}
-                        </p>
-                      )}
                     </button>
                   ))}
                 </div>
@@ -549,7 +708,7 @@ function SaveButton({
 }) {
   const config = {
     idle: { icon: Save, label: "Guardar", style: "bg-brand-light text-brand hover:bg-brand/10" },
-    "loading-text": { icon: Loader2, label: "Obteniendo texto...", style: "bg-stone-100 text-text-muted" },
+    "loading-text": { icon: Loader2, label: "Cargando...", style: "bg-stone-100 text-text-muted" },
     saving: { icon: Loader2, label: "Indexando...", style: "bg-stone-100 text-text-muted" },
     saved: { icon: CheckCircle2, label: "Guardada", style: "bg-green-50 text-green-700" },
     exists: { icon: CheckCircle2, label: "Ya existe", style: "bg-amber-50 text-amber-700" },
@@ -592,7 +751,9 @@ function DetailPanel({
 
   const isExterna = "ius" in tesis;
   const rubro = tesis.rubro;
-  const texto = tesis.texto;
+  const texto = isExterna
+    ? (tesis as TesisExterna).textoPublicacion || tesis.texto
+    : tesis.texto;
   const epoca = tesis.epoca;
   const instancia = tesis.instancia;
   const tipo = tesis.tipo;
