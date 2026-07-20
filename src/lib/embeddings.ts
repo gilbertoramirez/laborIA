@@ -4,25 +4,33 @@ const HF_API_URL =
 export async function generateEmbedding(text: string): Promise<number[]> {
   const hfToken = process.env.HUGGINGFACE_API_KEY;
 
-  const response = await fetch(HF_API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(hfToken ? { Authorization: `Bearer ${hfToken}` } : {}),
-    },
-    body: JSON.stringify({
-      inputs: text,
-      options: { wait_for_model: true },
-    }),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`HuggingFace API error: ${response.status} - ${error}`);
+  try {
+    const response = await fetch(HF_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(hfToken ? { Authorization: `Bearer ${hfToken}` } : {}),
+      },
+      body: JSON.stringify({
+        inputs: text,
+        options: { wait_for_model: true },
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`HuggingFace API error: ${response.status} - ${error}`);
+    }
+
+    const embedding = await response.json();
+    return embedding as number[];
+  } finally {
+    clearTimeout(timeout);
   }
-
-  const embedding = await response.json();
-  return embedding as number[];
 }
 
 export async function generateEmbeddings(

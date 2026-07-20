@@ -100,11 +100,17 @@ export async function POST(request: NextRequest) {
 
     const payload = buildSJFPayload(query, page, pageSize);
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+
     const response = await fetch(SJF_SEARCH_URL, {
       method: "POST",
       headers: SJF_HEADERS,
       body: JSON.stringify(payload),
+      signal: controller.signal,
     });
+
+    clearTimeout(timeout);
 
     if (!response.ok) {
       const text = await response.text();
@@ -163,19 +169,35 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Se requiere ID" }, { status: 400 });
     }
 
-    const response = await fetch(`${SJF_DETAIL_URL}/${id}`, {
-      headers: SJF_HEADERS,
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 7000);
 
-    if (!response.ok) {
+    try {
+      const response = await fetch(`${SJF_DETAIL_URL}/${id}`, {
+        headers: SJF_HEADERS,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        return NextResponse.json(
+          { error: `Error obteniendo detalle: ${response.status}` },
+          { status: 502 }
+        );
+      }
+
+      const data = await response.json();
+      return NextResponse.json({ tesis: data });
+    } catch (fetchErr) {
+      clearTimeout(timeout);
+      const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+      console.error("SJF detail fetch error:", msg);
       return NextResponse.json(
-        { error: `Error obteniendo detalle: ${response.status}` },
+        { error: `Error conectando con SJF: ${msg}` },
         { status: 502 }
       );
     }
-
-    const data = await response.json();
-    return NextResponse.json({ tesis: data });
   } catch (error) {
     console.error("SJF detail error:", error);
     return NextResponse.json(
