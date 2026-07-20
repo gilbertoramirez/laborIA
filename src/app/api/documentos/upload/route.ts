@@ -114,10 +114,9 @@ export async function POST(request: NextRequest) {
       storage_path: null,
     }));
 
-    const { data: inserted, error: insertError } = await getSupabaseAdmin()
+    const { error: insertError } = await getSupabaseAdmin()
       .from("document_chunks")
-      .insert(rows)
-      .select("id");
+      .insert(rows);
 
     if (insertError) {
       console.error("DB insert error:", insertError);
@@ -127,13 +126,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const chunkIds = (inserted || []).map((r: { id: string }) => r.id);
-
     return NextResponse.json({
       success: true,
       filename: file.name,
       chunks_count: chunks.length,
-      chunk_ids: chunkIds,
     });
   } catch (error) {
     console.error("Upload error:", error);

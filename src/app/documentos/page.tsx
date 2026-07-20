@@ -152,66 +152,14 @@ function DocumentosChat() {
       }
 
       const data = await res.json();
-      const chunkIds: string[] = data.chunk_ids || [];
-
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: `Documento "${data.filename}" subido (${data.chunks_count} fragmentos). Indexando para búsqueda IA...`,
+          content: `Documento "${data.filename}" subido e indexado correctamente (${data.chunks_count} fragmentos). Ya puedes hacerme preguntas sobre su contenido.`,
         },
       ]);
       loadDocs();
-
-      if (chunkIds.length > 0) {
-        let remaining = [...chunkIds];
-        let retries = 0;
-        const maxRetries = 5;
-
-        while (remaining.length > 0 && retries < maxRetries) {
-          const batch = remaining.slice(0, 3);
-          try {
-            const embedRes = await fetch("/api/documentos/embed", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ chunk_ids: batch }),
-            });
-            const embedData = await embedRes.json();
-
-            if (embedData.loading) {
-              retries++;
-              const wait = Math.min(embedData.estimated_time || 10, 30);
-              setUploadError(`Modelo IA cargando... reintentando en ${wait}s (${retries}/${maxRetries})`);
-              await new Promise((r) => setTimeout(r, wait * 1000));
-              continue;
-            }
-
-            if (embedData.processed > 0) {
-              remaining = remaining.slice(embedData.processed);
-              retries = 0;
-            } else if (embedData.done) {
-              remaining = remaining.slice(batch.length);
-            } else {
-              retries++;
-              await new Promise((r) => setTimeout(r, 5000));
-            }
-          } catch {
-            retries++;
-            await new Promise((r) => setTimeout(r, 5000));
-          }
-        }
-
-        setUploadError("");
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "assistant",
-            content: remaining.length === 0
-              ? "Indexación completada. Ya puedes hacerme preguntas sobre el documento."
-              : `Indexación parcial (${chunkIds.length - remaining.length}/${chunkIds.length} fragmentos). Puedes preguntar sobre lo indexado.`,
-          },
-        ]);
-      }
     } catch (err) {
       setUploadError(
         err instanceof Error ? err.message : "Error al subir archivo"

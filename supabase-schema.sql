@@ -17,7 +17,7 @@ create table document_chunks (
 create index on document_chunks using ivfflat (embedding vector_cosine_ops)
   with (lists = 100);
 
--- 4. Función de búsqueda por similitud
+-- 4. Función de búsqueda por similitud (vector - requiere embeddings)
 create or replace function search_documents(
   query_embedding text,
   match_count int default 10,
@@ -46,6 +46,44 @@ begin
     limit match_count;
 end;
 $$;
+
+-- 4b. Función de búsqueda por texto completo (no requiere embeddings)
+-- EJECUTAR EN SUPABASE SQL EDITOR:
+create or replace function search_documents_text(
+  search_query text,
+  match_count int default 5
+)
+returns table (
+  id uuid,
+  content text,
+  source_filename text,
+  chunk_index integer,
+  rank real
+)
+language plpgsql
+as $$
+begin
+  return query
+    select
+      dc.id,
+      dc.content,
+      dc.source_filename,
+      dc.chunk_index,
+      ts_rank(
+        to_tsvector('spanish', dc.content),
+        to_tsquery('spanish', search_query)
+      ) as rank
+    from document_chunks dc
+    where to_tsvector('spanish', dc.content) @@ to_tsquery('spanish', search_query)
+    order by rank desc
+    limit match_count;
+end;
+$$;
+
+-- 4c. Índice GIN para búsqueda de texto (acelera las búsquedas)
+create index if not exists idx_document_chunks_fts
+  on document_chunks
+  using gin (to_tsvector('spanish', content));
 
 -- 5. Tabla de tesis guardadas del SJF
 create table tesis_guardadas (
