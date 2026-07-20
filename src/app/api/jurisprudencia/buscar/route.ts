@@ -5,10 +5,13 @@ const SJF_SEARCH_URL =
 const SJF_DETAIL_URL =
   "https://sjf2.scjn.gob.mx/services/sjftesismicroservice/api/public/tesis";
 
-const SJF_HEADERS = {
+const SJF_HEADERS: Record<string, string> = {
   "Content-Type": "application/json",
+  Accept: "application/json, text/plain, */*",
   Origin: "https://sjf2.scjn.gob.mx",
   Referer: "https://sjf2.scjn.gob.mx/busqueda-principal-tesis",
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
 };
 
 interface SJFDocument {
