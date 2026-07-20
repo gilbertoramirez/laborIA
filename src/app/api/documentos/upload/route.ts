@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 
-export const maxDuration = 60;
-
 interface DocumentChunk {
   content: string;
   metadata: { chunk_index: number; source_filename: string };
@@ -107,44 +105,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { generateEmbeddings } = await import("@/lib/embeddings");
-
-    const texts = chunks.map((c) => c.content);
-    let embeddings: number[][];
-    try {
-      embeddings = await generateEmbeddings(texts);
-    } catch (embErr) {
-      console.error("Embedding error:", embErr);
-      const msg = embErr instanceof Error ? embErr.message : String(embErr);
-      if (msg.includes("abort") || msg.includes("timeout")) {
-        return NextResponse.json(
-          {
-            error: "Timeout generando embeddings. Intenta con un archivo más corto o reintenta.",
-          },
-          { status: 504 }
-        );
-      }
-      return NextResponse.json(
-        {
-          error: "El modelo de IA está cargando. Intenta de nuevo en 30 segundos.",
-        },
-        { status: 503 }
-      );
-    }
-
     const { getSupabaseAdmin } = await import("@/lib/supabase");
 
-    const rows = chunks.map((chunk, i) => ({
+    const rows = chunks.map((chunk) => ({
       content: chunk.content,
-      embedding: JSON.stringify(embeddings[i]),
       source_filename: chunk.metadata.source_filename,
       chunk_index: chunk.metadata.chunk_index,
       storage_path: null,
     }));
 
-    const { error: insertError } = await getSupabaseAdmin()
+    const { data: inserted, error: insertError } = await getSupabaseAdmin()
       .from("document_chunks")
-      .insert(rows);
+      .insert(rows)
+      .select("id");
 
     if (insertError) {
       console.error("DB insert error:", insertError);
@@ -154,10 +127,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const chunkIds = (inserted || []).map((r: { id: string }) => r.id);
+
     return NextResponse.json({
       success: true,
       filename: file.name,
       chunks_count: chunks.length,
+      chunk_ids: chunkIds,
     });
   } catch (error) {
     console.error("Upload error:", error);
