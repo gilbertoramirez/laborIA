@@ -3,6 +3,8 @@ import { getSupabaseAdmin } from "@/lib/supabase";
 import { generateEmbeddings } from "@/lib/embeddings";
 import { parsePDF, parsePlainText } from "@/lib/pdf-parser";
 
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
@@ -28,26 +30,20 @@ export async function POST(request: NextRequest) {
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
-    const { data: uploadData, error: uploadError } = await getSupabaseAdmin().storage
-      .from("documentos")
-      .upload(`jurisprudencias/${Date.now()}-${file.name}`, buffer, {
-        contentType: file.type,
-      });
-
-    if (uploadError) {
-      console.error("Storage upload error:", uploadError);
-      return NextResponse.json(
-        { error: "Error al subir archivo" },
-        { status: 500 }
-      );
-    }
-
     let chunks;
-    if (file.type === "application/pdf") {
-      chunks = await parsePDF(buffer, file.name);
-    } else {
-      const text = new TextDecoder().decode(buffer);
-      chunks = parsePlainText(text, file.name);
+    try {
+      if (file.type === "application/pdf") {
+        chunks = await parsePDF(buffer, file.name);
+      } else {
+        const text = new TextDecoder().decode(buffer);
+        chunks = parsePlainText(text, file.name);
+      }
+    } catch (parseErr) {
+      console.error("Parse error:", parseErr);
+      return NextResponse.json(
+        { error: "Error al leer el archivo. Verifica que no esté dañado." },
+        { status: 400 }
+      );
     }
 
     if (chunks.length === 0) {
@@ -58,14 +54,30 @@ export async function POST(request: NextRequest) {
     }
 
     const texts = chunks.map((c) => c.content);
-    const embeddings = await generateEmbeddings(texts);
+    let embeddings: number[][];
+    try {
+      embeddings = await generateEmbeddings(texts);
+    } catch (embErr) {
+      console.error("Embedding error:", embErr);
+      const msg = embErr instanceof Error ? embErr.message : String(embErr);
+      if (msg.includes("abort") || msg.includes("timeout")) {
+        return NextResponse.json(
+          { error: "Timeout generando embeddings. Intenta con un archivo más corto o reintenta." },
+          { status: 504 }
+        );
+      }
+      return NextResponse.json(
+        { error: "El modelo de IA está cargando. Intenta de nuevo en 30 segundos." },
+        { status: 503 }
+      );
+    }
 
     const rows = chunks.map((chunk, i) => ({
       content: chunk.content,
       embedding: JSON.stringify(embeddings[i]),
       source_filename: chunk.metadata.source_filename,
       chunk_index: chunk.metadata.chunk_index,
-      storage_path: uploadData.path,
+      storage_path: null,
     }));
 
     const { error: insertError } = await getSupabaseAdmin()
@@ -75,7 +87,7 @@ export async function POST(request: NextRequest) {
     if (insertError) {
       console.error("DB insert error:", insertError);
       return NextResponse.json(
-        { error: "Error al guardar en base de datos" },
+        { error: `Error en base de datos: ${insertError.message}` },
         { status: 500 }
       );
     }
@@ -84,12 +96,12 @@ export async function POST(request: NextRequest) {
       success: true,
       filename: file.name,
       chunks_count: chunks.length,
-      storage_path: uploadData.path,
     });
   } catch (error) {
     console.error("Upload error:", error);
+    const msg = error instanceof Error ? error.message : "Error desconocido";
     return NextResponse.json(
-      { error: "Error procesando archivo" },
+      { error: `Error procesando archivo: ${msg}` },
       { status: 500 }
     );
   }
