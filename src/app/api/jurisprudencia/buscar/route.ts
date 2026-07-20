@@ -14,6 +14,62 @@ const SJF_HEADERS: Record<string, string> = {
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
 };
 
+function buildSJFPayload(query: string, page: number, pageSize: number) {
+  return {
+    bFacet: true,
+    classifiers: [
+      {
+        name: "idEpoca",
+        value: ["210", "200", "100", "5"],
+        allSelected: false,
+        isMatrix: false,
+        visible: false,
+      },
+      {
+        name: "numInstancia",
+        value: ["6", "60", "7", "70", "8", "80", "1", "10", "2", "20", "3", "30", "4", "40", "5", "50"],
+        allSelected: false,
+        isMatrix: false,
+        visible: false,
+      },
+      {
+        name: "tipoDocumento",
+        value: ["1"],
+        allSelected: false,
+        isMatrix: false,
+        visible: false,
+      },
+    ],
+    filterExpression: "",
+    idApp: "SJFAPP2020",
+    ius: [],
+    lbSearch: [
+      "12a. Época – Todas las Instancias",
+      "11a. Época – Todas las Instancias",
+      "10a. Época – Todas las Instancias",
+      "9a. Época – Todas las Instancias",
+    ],
+    searchTerms: [
+      {
+        expression: query,
+        fields: ["localizacionBusqueda", "rubro", "texto"],
+        fieldsText: "Localización, Rubro (título y subtítulo), Texto",
+        fieldsUser: "Localización: \\nRubro (título y subtítulo): \\nTexto: ",
+        esInicial: true,
+        esNRD: false,
+        lsFields: [],
+        operator: 0,
+        operatorText: "Y",
+        operatorUser: "Y",
+      },
+    ],
+    pageNumber: page,
+    pageSize: pageSize,
+    sortField: "relevancia",
+    sortDirection: "desc",
+  };
+}
+
 interface SJFDocument {
   id: string;
   ius: number;
@@ -42,14 +98,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const payload = buildSJFPayload(query, page, pageSize);
+
     const response = await fetch(SJF_SEARCH_URL, {
       method: "POST",
       headers: SJF_HEADERS,
-      body: JSON.stringify({
-        searchText: query,
-        pageNumber: page,
-        pageSize: pageSize,
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
@@ -73,7 +127,10 @@ export async function POST(request: NextRequest) {
       epoca: doc.epocaAbr || "",
       instancia: doc.sala || doc.instanciaAbr || "",
       instanciaAbr: doc.instanciaAbr || "",
-      tipo: doc.ta_tj === 1 || doc.tipoTesis === "1" ? "Jurisprudencia" : "Tesis aislada",
+      tipo:
+        doc.ta_tj === 1 || doc.tipoTesis === "1"
+          ? "Jurisprudencia"
+          : "Tesis aislada",
       claveTesis: doc.claveTesis || "",
       fechaPublicacion: doc.fechaPublicacion || "",
       localizacion: doc.localizacion || "",
