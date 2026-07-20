@@ -23,37 +23,34 @@ export async function POST(request: NextRequest) {
       .filter((w) => w.length > 2)
       .slice(0, 8);
 
-    const tsquery = searchWords.join(" | ");
+    let chunks: Array<{
+      id: string;
+      content: string;
+      source_filename: string;
+      chunk_index: number;
+      rank?: number;
+    }> | null = null;
 
-    const { data: chunks, error: searchError } = await supabase.rpc(
+    const tsquery = searchWords.join(" | ");
+    const { data: tsChunks, error: searchError } = await supabase.rpc(
       "search_documents_text",
-      {
-        search_query: tsquery,
-        match_count: 5,
-      }
+      { search_query: tsquery, match_count: 5 }
     );
 
-    if (searchError) {
-      console.error("Text search error:", searchError);
+    if (!searchError && tsChunks && tsChunks.length > 0) {
+      chunks = tsChunks;
+    } else {
+      if (searchError) console.error("FTS error (using fallback):", searchError);
 
-      const { data: fallbackChunks, error: fallbackError } = await supabase
+      const { data: fallbackChunks } = await supabase
         .from("document_chunks")
         .select("id, content, source_filename, chunk_index")
         .or(searchWords.map((w) => `content.ilike.%${w}%`).join(","))
         .limit(5);
 
-      if (fallbackError || !fallbackChunks || fallbackChunks.length === 0) {
-        return NextResponse.json({
-          answer:
-            "No encontré información relevante en los documentos subidos. Intenta con otra pregunta o sube más documentos.",
-          sources: [],
-        });
+      if (fallbackChunks && fallbackChunks.length > 0) {
+        chunks = fallbackChunks;
       }
-
-      return buildResponse(fallbackChunks.map((c) => ({
-        ...c,
-        rank: 0,
-      })), question, history);
     }
 
     if (!chunks || chunks.length === 0) {
@@ -64,7 +61,19 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    return buildResponse(chunks, question, history);
+    const sources = chunks.map((c) => ({
+      filename: c.source_filename,
+      excerpt: c.content.substring(0, 200) + "...",
+    }));
+
+    const aiAnswer = await tryGenerateAnswer(chunks, question, history);
+
+    if (aiAnswer) {
+      return NextResponse.json({ answer: aiAnswer, sources });
+    }
+
+    const answer = formatChunksAsAnswer(chunks, question);
+    return NextResponse.json({ answer, sources });
   } catch (error) {
     console.error("Chat error:", error);
     return NextResponse.json(
@@ -74,16 +83,16 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function buildResponse(
-  chunks: Array<{ content: string; source_filename: string; rank: number }>,
+async function tryGenerateAnswer(
+  chunks: Array<{ content: string; source_filename: string }>,
   question: string,
   history: Array<{ role: string; content: string }>
-) {
+): Promise<string | null> {
+  const hfToken = process.env.HUGGINGFACE_API_KEY;
+  if (!hfToken) return null;
+
   const context = chunks
-    .map(
-      (c, i) =>
-        `[Fragmento ${i + 1} - ${c.source_filename}]:\n${c.content}`
-    )
+    .map((c, i) => `[${i + 1}. ${c.source_filename}]:\n${c.content}`)
     .join("\n\n---\n\n");
 
   const historyText = history
@@ -93,29 +102,27 @@ async function buildResponse(
     )
     .join("\n");
 
-  const prompt = `<s>[INST] Eres un asistente legal mexicano experto. Responde la pregunta del usuario basándote ÚNICAMENTE en los fragmentos de documentos proporcionados. Si la información no está en los fragmentos, di que no tienes esa información. Responde en español, de forma clara y concisa.
+  const prompt = `<s>[INST] Eres un asistente legal mexicano experto. Responde basándote ÚNICAMENTE en los fragmentos. Si la información no está, dilo. Responde en español, claro y conciso.
 
-FRAGMENTOS DE DOCUMENTOS:
+FRAGMENTOS:
 ${context}
 
-${historyText ? `HISTORIAL DE CONVERSACIÓN:\n${historyText}\n\n` : ""}PREGUNTA: ${question} [/INST]`;
-
-  const hfToken = process.env.HUGGINGFACE_API_KEY;
+${historyText ? `HISTORIAL:\n${historyText}\n\n` : ""}PREGUNTA: ${question} [/INST]`;
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 9000);
+  const timeout = setTimeout(() => controller.abort(), 7000);
 
   try {
     const response = await fetch(HF_TEXT_GEN_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(hfToken ? { Authorization: `Bearer ${hfToken}` } : {}),
+        Authorization: `Bearer ${hfToken}`,
       },
       body: JSON.stringify({
         inputs: prompt,
         parameters: {
-          max_new_tokens: 500,
+          max_new_tokens: 400,
           temperature: 0.3,
           top_p: 0.9,
           do_sample: true,
@@ -127,49 +134,31 @@ ${historyText ? `HISTORIAL DE CONVERSACIÓN:\n${historyText}\n\n` : ""}PREGUNTA:
 
     clearTimeout(timeout);
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error("HF text-gen error:", response.status, errText);
-
-      if (response.status === 503) {
-        return NextResponse.json({
-          answer:
-            "El modelo de IA está cargando (puede tardar ~30 segundos). Por favor intenta de nuevo en un momento.",
-          sources: chunks.map((c) => ({
-            filename: c.source_filename,
-            excerpt: c.content.substring(0, 200) + "...",
-          })),
-          loading: true,
-        });
-      }
-
-      return NextResponse.json(
-        { error: `Error generando respuesta: ${response.status}` },
-        { status: 502 }
-      );
-    }
+    if (!response.ok) return null;
 
     const result = await response.json();
-    const generatedText =
-      Array.isArray(result) && result[0]?.generated_text
-        ? result[0].generated_text.trim()
-        : "No se pudo generar una respuesta.";
-
-    return NextResponse.json({
-      answer: generatedText,
-      sources: chunks.map((c) => ({
-        filename: c.source_filename,
-        excerpt: c.content.substring(0, 200) + "...",
-      })),
-    });
-  } catch (fetchErr) {
+    if (Array.isArray(result) && result[0]?.generated_text) {
+      return result[0].generated_text.trim();
+    }
+    return null;
+  } catch {
     clearTimeout(timeout);
-    const msg =
-      fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
-    console.error("HF text-gen fetch error:", msg);
-    return NextResponse.json(
-      { error: `Error conectando con IA: ${msg}` },
-      { status: 502 }
-    );
+    return null;
   }
+}
+
+function formatChunksAsAnswer(
+  chunks: Array<{ content: string; source_filename: string }>,
+  question: string
+): string {
+  const intro = `Encontré ${chunks.length} fragmento${chunks.length > 1 ? "s" : ""} relevante${chunks.length > 1 ? "s" : ""} para "${question}":\n\n`;
+
+  const body = chunks
+    .map(
+      (c, i) =>
+        `📄 **${c.source_filename}** (fragmento ${i + 1}):\n${c.content.substring(0, 500)}${c.content.length > 500 ? "..." : ""}`
+    )
+    .join("\n\n---\n\n");
+
+  return intro + body;
 }
