@@ -12,8 +12,7 @@ import {
   MessageSquare,
   Send,
   Loader2,
-  File,
-  Trash2,
+  File as FileIcon,
   AlertCircle,
   Bot,
   User,
@@ -337,7 +336,7 @@ function DocumentosChat() {
                 key={doc.filename + doc.created_at}
                 className="flex items-center gap-2.5 px-3 py-2.5 bg-white rounded-lg border border-border hover:shadow-sm transition-all"
               >
-                <File size={16} className="text-brand shrink-0" />
+                <FileIcon size={16} className="text-brand shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-text-primary truncate">
                     {doc.filename}
