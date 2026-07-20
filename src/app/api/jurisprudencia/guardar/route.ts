@@ -6,50 +6,64 @@ export async function POST(request: NextRequest) {
   try {
     const { tesis } = await request.json();
 
-    if (!tesis || !tesis.rubro || !tesis.texto) {
+    if (!tesis || !tesis.rubro) {
       return NextResponse.json(
-        { error: "Datos de tesis incompletos" },
+        { error: "Datos de tesis incompletos (falta rubro)" },
         { status: 400 }
       );
     }
 
     const supabase = getSupabaseAdmin();
 
-    const { data: existing } = await supabase
-      .from("tesis_guardadas")
-      .select("id")
-      .eq("registro", tesis.registro)
-      .maybeSingle();
+    if (tesis.registro) {
+      const { data: existing } = await supabase
+        .from("tesis_guardadas")
+        .select("id")
+        .eq("registro", tesis.registro)
+        .maybeSingle();
 
-    if (existing) {
-      return NextResponse.json(
-        { error: "Esta tesis ya está guardada", existing: true },
-        { status: 409 }
-      );
+      if (existing) {
+        return NextResponse.json(
+          { error: "Esta tesis ya está guardada", existing: true },
+          { status: 409 }
+        );
+      }
     }
 
-    const textToEmbed = `${tesis.rubro}\n\n${tesis.texto}`;
-    const embedding = await generateEmbedding(textToEmbed);
+    const texto = tesis.texto || tesis.rubro;
+    const textToEmbed = `${tesis.rubro}\n\n${texto}`;
+
+    let embedding: number[] | null = null;
+    try {
+      embedding = await generateEmbedding(textToEmbed);
+    } catch (embError) {
+      console.error("Embedding error (guardando sin embedding):", embError);
+    }
+
+    const row: Record<string, unknown> = {
+      registro: tesis.registro || `manual-${Date.now()}`,
+      epoca: tesis.epoca || "",
+      instancia: tesis.instancia || "",
+      tipo: tesis.tipo || "",
+      rubro: tesis.rubro,
+      texto: texto,
+      fuente: "SJF-SCJN",
+    };
+
+    if (embedding) {
+      row.embedding = JSON.stringify(embedding);
+    }
 
     const { data, error } = await supabase
       .from("tesis_guardadas")
-      .insert({
-        registro: tesis.registro || "",
-        epoca: tesis.epoca || "",
-        instancia: tesis.instancia || "",
-        tipo: tesis.tipo || "",
-        rubro: tesis.rubro,
-        texto: tesis.texto,
-        embedding: JSON.stringify(embedding),
-        fuente: "SJF-SCJN",
-      })
+      .insert(row)
       .select("id")
       .single();
 
     if (error) {
-      console.error("DB insert error:", error);
+      console.error("DB insert error:", JSON.stringify(error));
       return NextResponse.json(
-        { error: "Error al guardar en base de datos" },
+        { error: `Error en base de datos: ${error.message}` },
         { status: 500 }
       );
     }
@@ -57,12 +71,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       id: data.id,
-      message: "Tesis guardada e indexada",
+      hasEmbedding: !!embedding,
+      message: embedding
+        ? "Tesis guardada e indexada"
+        : "Tesis guardada (sin embedding, se indexará después)",
     });
   } catch (error) {
-    console.error("Save error:", error);
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error("Save error:", msg);
     return NextResponse.json(
-      { error: "Error al procesar la tesis" },
+      { error: `Error al procesar: ${msg}` },
       { status: 500 }
     );
   }
