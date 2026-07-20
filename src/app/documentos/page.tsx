@@ -146,8 +146,10 @@ function DocumentosChat() {
       });
 
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Error al subir");
+        const text = await res.text();
+        let msg = "Error al subir";
+        try { msg = JSON.parse(text).error || msg; } catch { /* not JSON */ }
+        throw new Error(msg);
       }
 
       const data = await res.json();
@@ -201,8 +203,10 @@ function DocumentosChat() {
       });
 
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Error al procesar");
+        const text = await res.text();
+        let msg = "Error al procesar";
+        try { msg = JSON.parse(text).error || msg; } catch { /* not JSON */ }
+        throw new Error(msg);
       }
 
       const data = await res.json();

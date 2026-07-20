@@ -94,8 +94,10 @@ export default function Jurisprudencia() {
       });
 
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Error en la búsqueda");
+        const text = await res.text();
+        let msg = "Error en la búsqueda";
+        try { msg = JSON.parse(text).error || msg; } catch { /* not JSON */ }
+        throw new Error(msg);
       }
 
       const data = await res.json();
