@@ -28,8 +28,8 @@ export default function Documentos() {
   }
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
-      <div className="flex items-start justify-between mb-10 animate-fade-in">
+    <div className="p-4 sm:p-8 max-w-7xl mx-auto">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-10 animate-fade-in">
         <div>
           <h1 className="font-display text-3xl text-text-primary">
             Automatizador de documentos
@@ -50,9 +50,9 @@ export default function Documentos() {
         </div>
       </div>
 
-      <div className="grid grid-cols-12 gap-6 animate-fade-in animate-fade-in-delay-1">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-fade-in animate-fade-in-delay-1">
         {/* Templates sidebar */}
-        <div className="col-span-3">
+        <div className="lg:col-span-3">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-text-muted mb-4">
             Plantillas
           </h2>
@@ -79,7 +79,7 @@ export default function Documentos() {
         </div>
 
         {/* Variables form */}
-        <div className="col-span-4">
+        <div className="lg:col-span-4">
           <div className="bg-white rounded-xl border border-border p-6">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-xs font-semibold uppercase tracking-wider text-text-muted">
@@ -166,7 +166,7 @@ export default function Documentos() {
         </div>
 
         {/* Preview */}
-        <div className="col-span-5">
+        <div className="lg:col-span-5">
           <div className="bg-white rounded-xl border border-border p-8 shadow-sm min-h-[600px]">
             <div className="max-w-md mx-auto text-justify leading-relaxed">
               <p className="text-center font-bold text-sm mb-1 tracking-wider">

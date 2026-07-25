@@ -118,8 +118,8 @@ export default function Panorama() {
   });
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
-      <div className="flex items-start justify-between mb-10 animate-fade-in">
+    <div className="p-4 sm:p-8 max-w-7xl mx-auto">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-10 animate-fade-in">
         <div>
           <h1 className="font-display text-3xl text-text-primary">
             Panorama del despacho
@@ -138,7 +138,7 @@ export default function Panorama() {
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-4 mb-10 animate-fade-in animate-fade-in-delay-1">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10 animate-fade-in animate-fade-in-delay-1">
         {stats.map((s) => (
           <div
             key={s.label}
@@ -162,7 +162,7 @@ export default function Panorama() {
         <h2 className="text-xs font-semibold uppercase tracking-wider text-text-muted mb-4">
           Módulos
         </h2>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {modulesGrid.map((mod) => {
             const Icon = mod.icon;
             return (
@@ -172,7 +172,7 @@ export default function Panorama() {
                 className={`
                   group bg-white rounded-xl border border-border p-5
                   hover:shadow-md hover:-translate-y-0.5 transition-all duration-200
-                  ${mod.featured ? "col-span-2 row-span-2 p-7" : ""}
+                  ${mod.featured ? "md:col-span-2 md:row-span-2 p-7" : ""}
                 `}
               >
                 <div className="flex items-start gap-3 mb-2">
@@ -219,12 +219,12 @@ export default function Panorama() {
         </div>
       </div>
 
-      <div className="grid grid-cols-5 gap-6 animate-fade-in animate-fade-in-delay-3">
-        <div className="col-span-3">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 animate-fade-in animate-fade-in-delay-3">
+        <div className="lg:col-span-3">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-text-muted mb-4">
             Próximos plazos procesales
           </h2>
-          <div className="bg-white rounded-xl border border-border overflow-hidden">
+          <div className="bg-white rounded-xl border border-border overflow-hidden overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border">
@@ -271,7 +271,7 @@ export default function Panorama() {
           </div>
         </div>
 
-        <div className="col-span-2">
+        <div className="lg:col-span-2">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-text-muted mb-4">
             Actividad reciente
           </h2>

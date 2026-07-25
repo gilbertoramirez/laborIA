@@ -200,8 +200,8 @@ function Casos() {
   const plazosOrdenados = [...casos].sort((a, b) => a.diasPlazo - b.diasPlazo);
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
-      <div className="flex items-start justify-between mb-10 animate-fade-in">
+    <div className="p-4 sm:p-8 max-w-7xl mx-auto">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-10 animate-fade-in">
         <div>
           <h1 className="font-display text-3xl text-text-primary">
             Gestor de casos y plazos
@@ -225,12 +225,12 @@ function Casos() {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-6 animate-fade-in animate-fade-in-delay-1">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in animate-fade-in-delay-1">
         {/* Left: Table */}
-        <div className="col-span-2">
+        <div className="lg:col-span-2">
           {/* Filters */}
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex gap-1">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+            <div className="flex flex-wrap gap-1">
               {(
                 ["Todos", "Conciliación", "Instrucción", "Juicio"] as Filtro[]
               ).map((f) => (
@@ -257,13 +257,13 @@ function Casos() {
                 placeholder="Filtrar por cliente o materia..."
                 value={busqueda}
                 onChange={(e) => setBusqueda(e.target.value)}
-                className="pl-8 pr-4 py-2 border border-border rounded-lg text-sm w-64 focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-colors"
+                className="pl-8 pr-4 py-2 border border-border rounded-lg text-sm w-full sm:w-64 focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-colors"
               />
             </div>
           </div>
 
           {/* Table */}
-          <div className="bg-white rounded-xl border border-border overflow-hidden">
+          <div className="bg-white rounded-xl border border-border overflow-hidden overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border">

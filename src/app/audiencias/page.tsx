@@ -141,8 +141,8 @@ export default function Audiencias() {
   });
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
-      <div className="flex items-start justify-between mb-10 animate-fade-in">
+    <div className="p-4 sm:p-8 max-w-7xl mx-auto">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-10 animate-fade-in">
         <div>
           <h1 className="font-display text-3xl text-text-primary">
             Audiencias — Juicio Oral
@@ -165,7 +165,7 @@ export default function Audiencias() {
 
       {/* Audiencia header */}
       <div className="bg-white rounded-xl border border-border p-6 mb-6 animate-fade-in animate-fade-in-delay-1">
-        <div className="flex items-start justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
           <div>
             <div className="flex items-center gap-3 mb-1">
               <div className="w-8 h-8 rounded-lg bg-brand-light flex items-center justify-center">
@@ -193,9 +193,9 @@ export default function Audiencias() {
         </div>
       </div>
 
-      <div className="grid grid-cols-5 gap-6 animate-fade-in animate-fade-in-delay-2">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 animate-fade-in animate-fade-in-delay-2">
         {/* Left: Player + Markers */}
-        <div className="col-span-2 space-y-6">
+        <div className="lg:col-span-2 space-y-6">
           {/* Audio player */}
           <div className="bg-white rounded-xl border border-border p-5">
             <div className="flex items-end gap-[3px] h-16 mb-4">
@@ -254,7 +254,7 @@ export default function Audiencias() {
         </div>
 
         {/* Right: Tabs */}
-        <div className="col-span-3">
+        <div className="lg:col-span-3">
           <div className="flex gap-1 mb-4 border-b border-border">
             {(
               [
@@ -284,7 +284,7 @@ export default function Audiencias() {
                   key={i}
                   className="flex gap-4 p-4 rounded-lg hover:bg-white transition-colors"
                 >
-                  <div className="w-28 shrink-0">
+                  <div className="w-20 sm:w-28 shrink-0">
                     <p className="text-xs font-semibold text-text-secondary uppercase tracking-wide">
                       {t.speaker}
                     </p>

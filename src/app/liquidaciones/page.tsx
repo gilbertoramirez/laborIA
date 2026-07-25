@@ -232,10 +232,10 @@ export default function Liquidaciones() {
   const labelClass = "block text-sm text-text-secondary mb-1.5";
 
   return (
-    <div className="p-8 max-w-[1400px] mx-auto">
-      <div className="flex items-start justify-between mb-8 animate-fade-in">
+    <div className="p-4 sm:p-8 max-w-[1400px] mx-auto">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-8 animate-fade-in">
         <div>
-          <h1 className="font-display text-3xl text-text-primary">Calculadora de liquidaciones</h1>
+          <h1 className="font-display text-2xl sm:text-3xl text-text-primary">Calculadora de liquidaciones</h1>
           <p className="text-text-muted mt-1 text-sm">Finiquitos, indemnizaciones y cuantificación conforme a la LFT</p>
         </div>
         <div className="flex gap-3">
@@ -250,9 +250,9 @@ export default function Liquidaciones() {
         </div>
       </div>
 
-      <div className="grid grid-cols-12 gap-6 animate-fade-in animate-fade-in-delay-1">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-fade-in animate-fade-in-delay-1">
         {/* LEFT: Inputs */}
-        <div className="col-span-5 space-y-5">
+        <div className="lg:col-span-5 space-y-5">
           <div className="bg-white rounded-xl border border-border p-6">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-text-muted mb-5">Datos de la relación laboral</h2>
             <div className="space-y-4">
@@ -382,7 +382,7 @@ export default function Liquidaciones() {
         </div>
 
         {/* RIGHT: Results */}
-        <div className="col-span-7 space-y-5" ref={resultRef}>
+        <div className="lg:col-span-7 space-y-5" ref={resultRef}>
           {!resultado ? (
             <div className="bg-white rounded-xl border border-border p-12 flex flex-col items-center justify-center min-h-[500px] text-center">
               <div className="w-16 h-16 rounded-2xl bg-stone-100 flex items-center justify-center mb-5">
@@ -394,7 +394,7 @@ export default function Liquidaciones() {
                 <span className="font-semibold text-brand"> Calcular liquidación</span> para
                 obtener el desglose con fundamento legal.
               </p>
-              <div className="mt-6 grid grid-cols-3 gap-4 text-center">
+              <div className="mt-6 grid grid-cols-3 gap-3 sm:gap-4 text-center">
                 <div className="p-3 bg-stone-50 rounded-lg">
                   <p className="text-xs text-text-muted">Campos requeridos</p>
                   <p className="text-lg font-semibold text-text-primary mt-0.5">3</p>
@@ -412,7 +412,7 @@ export default function Liquidaciones() {
           ) : (
             <>
               {/* Computed values banner */}
-              <div className="bg-white rounded-xl border border-border p-5 grid grid-cols-4 gap-4">
+              <div className="bg-white rounded-xl border border-border p-5 grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <div>
                   <p className="text-[10px] uppercase tracking-wider text-text-muted">Antigüedad</p>
                   <p className="text-sm font-semibold tabular-nums mt-0.5">{resultado.antiguedad.anios}a {resultado.antiguedad.meses}m {resultado.antiguedad.dias}d</p>
@@ -441,23 +441,23 @@ export default function Liquidaciones() {
                   </button>
                 </div>
 
-                <div className="bg-white rounded-xl border border-border overflow-hidden">
-                  <table className="w-full">
+                <div className="bg-white rounded-xl border border-border overflow-hidden overflow-x-auto">
+                  <table className="w-full min-w-[600px]">
                     <thead>
                       <tr className="border-b border-border">
-                        <th className="text-left text-[11px] uppercase tracking-wider text-text-muted font-medium px-5 py-3">Concepto</th>
-                        <th className="text-left text-[11px] uppercase tracking-wider text-text-muted font-medium px-5 py-3">Base de cálculo</th>
-                        <th className="text-left text-[11px] uppercase tracking-wider text-text-muted font-medium px-5 py-3">Fundamento</th>
-                        <th className="text-right text-[11px] uppercase tracking-wider text-text-muted font-medium px-5 py-3">Importe</th>
+                        <th className="text-left text-[11px] uppercase tracking-wider text-text-muted font-medium px-3 sm:px-5 py-3">Concepto</th>
+                        <th className="text-left text-[11px] uppercase tracking-wider text-text-muted font-medium px-3 sm:px-5 py-3 hidden sm:table-cell">Base de cálculo</th>
+                        <th className="text-left text-[11px] uppercase tracking-wider text-text-muted font-medium px-3 sm:px-5 py-3 hidden sm:table-cell">Fundamento</th>
+                        <th className="text-right text-[11px] uppercase tracking-wider text-text-muted font-medium px-3 sm:px-5 py-3">Importe</th>
                       </tr>
                     </thead>
                     <tbody>
                       {resultado.conceptos.map((c, i) => (
                         <tr key={i} className="border-b border-border last:border-0 hover:bg-stone-50/50 transition-colors">
-                          <td className="px-5 py-3 text-sm font-medium text-text-primary">{c.nombre}</td>
-                          <td className="px-5 py-3 text-xs text-text-muted">{c.base}</td>
-                          <td className="px-5 py-3 text-xs text-text-muted">{c.fundamento}</td>
-                          <td className="px-5 py-3 text-sm text-right font-semibold tabular-nums">{formatMXN(c.importe)}</td>
+                          <td className="px-3 sm:px-5 py-3 text-sm font-medium text-text-primary">{c.nombre}</td>
+                          <td className="px-3 sm:px-5 py-3 text-xs text-text-muted hidden sm:table-cell">{c.base}</td>
+                          <td className="px-3 sm:px-5 py-3 text-xs text-text-muted hidden sm:table-cell">{c.fundamento}</td>
+                          <td className="px-3 sm:px-5 py-3 text-sm text-right font-semibold tabular-nums">{formatMXN(c.importe)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -466,7 +466,7 @@ export default function Liquidaciones() {
 
                 <div className="mt-3 rounded-xl p-5 flex items-center justify-between shadow-lg" style={{ background: "linear-gradient(135deg, #8C3420, #C94A2E, #B5432A)" }}>
                   <span className="text-white/90 text-sm font-semibold uppercase tracking-wider">Total a liquidar</span>
-                  <span className="text-white text-3xl font-bold tabular-nums">{formatMXN(resultado.subtotal)}</span>
+                  <span className="text-white text-2xl sm:text-3xl font-bold tabular-nums">{formatMXN(resultado.subtotal)}</span>
                 </div>
               </div>
 
@@ -530,7 +530,7 @@ export default function Liquidaciones() {
                       <p className="text-xs text-text-muted mt-0.5">Descuento de {formatMXN(resultado.subtotal - totalNegociado)} ({100 - pctNegociacion}% menos)</p>
                     )}
                   </div>
-                  <p className={`text-3xl font-bold tabular-nums ${pctNegociacion < 100 ? "text-amber-700" : "text-text-primary"}`}>{formatMXN(totalNegociado)}</p>
+                  <p className={`text-2xl sm:text-3xl font-bold tabular-nums ${pctNegociacion < 100 ? "text-amber-700" : "text-text-primary"}`}>{formatMXN(totalNegociado)}</p>
                 </div>
 
                 <div className="flex items-start gap-2 mt-4 p-3 bg-brand-50 rounded-lg">
