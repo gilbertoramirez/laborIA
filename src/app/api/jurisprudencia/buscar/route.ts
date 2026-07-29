@@ -14,7 +14,7 @@ const SJF_HEADERS: Record<string, string> = {
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
 };
 
-function buildSJFPayload(query: string, page: number) {
+function buildSJFPayload(query: string, from: number, size: number) {
   return {
     bFacet: true,
     classifiers: [
@@ -66,8 +66,10 @@ function buildSJFPayload(query: string, page: number) {
         operatorUser: "Y",
       },
     ],
-    pageNumber: page,
-    pageSize: 10,
+    from,
+    size,
+    pageNumber: Math.floor(from / size) + 1,
+    pageSize: size,
     sortField: "relevancia",
     sortDirection: "desc",
   };
@@ -112,31 +114,6 @@ function mapDocument(doc: SJFDocument) {
   };
 }
 
-async function fetchSJFPage(
-  query: string,
-  sjfPage: number,
-  signal: AbortSignal
-): Promise<{ documents: SJFDocument[]; total: number }> {
-  const payload = buildSJFPayload(query, sjfPage);
-  const response = await fetch(SJF_SEARCH_URL, {
-    method: "POST",
-    headers: SJF_HEADERS,
-    body: JSON.stringify(payload),
-    signal,
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    return { documents: [], total: 0 };
-  }
-
-  const data = await response.json();
-  return {
-    documents: data.documents || [],
-    total: data.total || 0,
-  };
-}
-
 const PAGE_SIZE = 10;
 
 export async function POST(request: NextRequest) {
@@ -150,72 +127,51 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const from = (page - 1) * PAGE_SIZE;
+    const payload = buildSJFPayload(query, from, PAGE_SIZE);
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
 
     try {
-      const firstSjfPage = (page - 1) * PAGE_SIZE + 1;
+      const response = await fetch(SJF_SEARCH_URL, {
+        method: "POST",
+        headers: SJF_HEADERS,
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+        cache: "no-store",
+      });
 
-      const firstResult = await fetchSJFPage(query, firstSjfPage, controller.signal);
-      const total = firstResult.total;
+      clearTimeout(timeout);
 
-      if (total === 0 || firstResult.documents.length === 0) {
-        clearTimeout(timeout);
-        return NextResponse.json({
-          results: [],
-          total: 0,
-          totalPages: 0,
-          pageSize: PAGE_SIZE,
-          query,
-          page,
-        });
+      if (!response.ok) {
+        const text = await response.text();
+        console.error("SJF API error:", response.status, text);
+        return NextResponse.json(
+          { error: `Error del SJF: ${response.status}` },
+          { status: 502 }
+        );
       }
 
-      const apiReturnsOnePerPage = firstResult.documents.length === 1 && total > 1;
-
-      let allDocuments: SJFDocument[];
-
-      if (apiReturnsOnePerPage) {
-        const remaining = Math.min(PAGE_SIZE - 1, total - firstSjfPage);
-        const batchPromises: Promise<{ documents: SJFDocument[]; total: number }>[] = [];
-
-        for (let i = 1; i <= remaining; i++) {
-          batchPromises.push(
-            fetchSJFPage(query, firstSjfPage + i, controller.signal)
-          );
-        }
-
-        const batchResults = await Promise.all(batchPromises);
-        clearTimeout(timeout);
-
-        allDocuments = [...firstResult.documents];
-        for (const r of batchResults) {
-          allDocuments.push(...r.documents);
-        }
-
-        const seen = new Set<string>();
-        allDocuments = allDocuments.filter((doc) => {
-          if (seen.has(doc.id)) return false;
-          seen.add(doc.id);
-          return true;
-        });
-      } else {
-        clearTimeout(timeout);
-        allDocuments = firstResult.documents;
-      }
-
-      const results = allDocuments.map(mapDocument);
-      const totalPages = apiReturnsOnePerPage
-        ? Math.ceil(total / PAGE_SIZE)
-        : Math.ceil(total / Math.max(allDocuments.length, 1));
+      const data = await response.json();
+      const documents: SJFDocument[] = data.documents || [];
+      const total = data.total || 0;
+      const results = documents.map(mapDocument);
 
       return NextResponse.json({
         results,
         total,
-        totalPages,
-        pageSize: results.length,
+        totalPages: Math.ceil(total / PAGE_SIZE),
+        pageSize: results.length || PAGE_SIZE,
         query,
         page,
+        _debug: {
+          documentsReturned: documents.length,
+          from,
+          size: PAGE_SIZE,
+          sjfTotal: total,
+          sjfTotalPage: data.totalPage,
+        },
       });
     } catch (fetchErr) {
       clearTimeout(timeout);

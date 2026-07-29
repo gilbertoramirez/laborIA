@@ -64,6 +64,7 @@ export default function Jurisprudencia() {
   const [externPage, setExternPage] = useState(1);
   const [externTotalPages, setExternTotalPages] = useState(0);
   const [externPageSize, setExternPageSize] = useState(10);
+  const [debugInfo, setDebugInfo] = useState<Record<string, unknown> | null>(null);
 
   const [iaResults, setIaResults] = useState<TesisGuardada[]>([]);
   const [iaSearching, setIaSearching] = useState(false);
@@ -108,6 +109,7 @@ export default function Jurisprudencia() {
       setExternPage(data.page || 1);
       setExternPageSize(data.pageSize || results.length || 10);
       setExternTotalPages(data.totalPages || 0);
+      if (data._debug) setDebugInfo(data._debug);
     } catch (err) {
       setExternError(
         err instanceof Error ? err.message : "Error conectando con el SJF"
@@ -390,6 +392,12 @@ export default function Jurisprudencia() {
               <p className="text-sm text-text-muted">
                 No se encontraron tesis. Intenta con otros términos.
               </p>
+            </div>
+          )}
+
+          {debugInfo && (
+            <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-xs font-mono text-yellow-800 overflow-x-auto">
+              <strong>DEBUG:</strong> {JSON.stringify(debugInfo)}
             </div>
           )}
 
