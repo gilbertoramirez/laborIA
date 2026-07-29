@@ -124,6 +124,23 @@ export async function POST(request: NextRequest) {
 
     const data = await response.json();
 
+    const debugKeys = Object.keys(data);
+    const debugArrayFields: Record<string, number> = {};
+    for (const key of debugKeys) {
+      if (Array.isArray(data[key])) {
+        debugArrayFields[key] = data[key].length;
+      }
+    }
+    console.log("SJF response keys:", debugKeys);
+    console.log("SJF array fields:", debugArrayFields);
+    console.log("SJF total:", data.total, "totalPage:", data.totalPage);
+    if (data.documents) {
+      console.log("SJF documents count:", Array.isArray(data.documents) ? data.documents.length : typeof data.documents);
+      if (Array.isArray(data.documents) && data.documents[0]) {
+        console.log("SJF first doc keys:", Object.keys(data.documents[0]));
+      }
+    }
+
     const documents: SJFDocument[] = data.documents || [];
     const results = documents.map((doc) => ({
       id: doc.id,
@@ -155,6 +172,13 @@ export async function POST(request: NextRequest) {
       pageSize,
       query,
       page,
+      _debug: {
+        responseKeys: debugKeys,
+        arrayFields: debugArrayFields,
+        documentsCount: documents.length,
+        sjfTotalPage: data.totalPage,
+        firstDocKeys: documents[0] ? Object.keys(documents[0]) : [],
+      },
     });
   } catch (error) {
     console.error("SJF search error:", error);
