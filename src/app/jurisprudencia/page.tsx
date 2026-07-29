@@ -79,6 +79,25 @@ export default function Jurisprudencia() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchSaving, setBatchSaving] = useState(false);
 
+  async function runDiagnostic() {
+    if (!query.trim()) return;
+    setExternSearching(true);
+    setDebugInfo(null);
+    try {
+      const res = await fetch("/api/jurisprudencia/buscar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: query.trim(), diagnostic: true }),
+      });
+      const data = await res.json();
+      setDebugInfo(data);
+    } catch (err) {
+      setDebugInfo({ error: String(err) });
+    } finally {
+      setExternSearching(false);
+    }
+  }
+
   async function searchExtern(page: number) {
     if (!query.trim() || externSearching) return;
 
@@ -92,7 +111,7 @@ export default function Jurisprudencia() {
       const res = await fetch("/api/jurisprudencia/buscar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: query.trim(), page, pageSize: 10 }),
+        body: JSON.stringify({ query: query.trim(), page }),
       });
 
       if (!res.ok) {
@@ -346,6 +365,16 @@ export default function Jurisprudencia() {
         </div>
       </form>
 
+      {tab === "externa" && query.trim() && (
+        <button
+          onClick={runDiagnostic}
+          disabled={externSearching}
+          className="mb-4 px-3 py-1.5 text-xs bg-yellow-100 text-yellow-800 rounded border border-yellow-300 hover:bg-yellow-200 disabled:opacity-50"
+        >
+          Diagnóstico API (temporal)
+        </button>
+      )}
+
       {/* ========== External search tab ========== */}
       {tab === "externa" && (
         <>
@@ -396,8 +425,8 @@ export default function Jurisprudencia() {
           )}
 
           {debugInfo && (
-            <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-xs font-mono text-yellow-800 overflow-x-auto">
-              <strong>DEBUG:</strong> {JSON.stringify(debugInfo)}
+            <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-xs font-mono text-yellow-800 overflow-x-auto whitespace-pre-wrap">
+              <strong>DEBUG:</strong> {JSON.stringify(debugInfo, null, 2)}
             </div>
           )}
 

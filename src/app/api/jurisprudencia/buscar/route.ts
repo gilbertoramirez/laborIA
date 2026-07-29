@@ -116,9 +116,39 @@ function mapDocument(doc: SJFDocument) {
 
 const PAGE_SIZE = 10;
 
+async function trySJFVariant(
+  label: string,
+  url: string,
+  payload: Record<string, unknown>,
+  signal: AbortSignal
+): Promise<{ label: string; count: number; total: number; ids: string[]; error?: string }> {
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: SJF_HEADERS,
+      body: JSON.stringify(payload),
+      signal,
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      return { label, count: 0, total: 0, ids: [], error: `HTTP ${response.status}` };
+    }
+    const data = await response.json();
+    const docs = Array.isArray(data.documents) ? data.documents : [];
+    return {
+      label,
+      count: docs.length,
+      total: data.total || 0,
+      ids: docs.map((d: { id: string }) => d.id),
+    };
+  } catch (e) {
+    return { label, count: 0, total: 0, ids: [], error: String(e) };
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const { query, page = 1 } = await request.json();
+    const { query, page = 1, diagnostic = false } = await request.json();
 
     if (!query || typeof query !== "string") {
       return NextResponse.json(
@@ -127,13 +157,58 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const from = (page - 1) * PAGE_SIZE;
-    const payload = buildSJFPayload(query, from, PAGE_SIZE);
-
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
 
     try {
+      if (diagnostic) {
+        const baseSearchTerms = [
+          {
+            expression: query,
+            fields: ["localizacionBusqueda", "rubro", "texto"],
+            fieldsText: "Localización, Rubro (título y subtítulo), Texto",
+            fieldsUser: "Localización: \\nRubro (título y subtítulo): \\nTexto: ",
+            esInicial: true,
+            esNRD: false,
+            lsFields: [],
+            operator: 0,
+            operatorText: "Y",
+            operatorUser: "Y",
+          },
+        ];
+
+        const variants = await Promise.all([
+          trySJFVariant("original", SJF_SEARCH_URL, buildSJFPayload(query, 0, 10), controller.signal),
+          trySJFVariant("no-classifiers", SJF_SEARCH_URL, {
+            searchTerms: baseSearchTerms,
+            pageNumber: 1,
+            pageSize: 10,
+            sortField: "relevancia",
+            sortDirection: "desc",
+          }, controller.signal),
+          trySJFVariant("minimal+from/size", SJF_SEARCH_URL, {
+            searchTerms: baseSearchTerms,
+            from: 0,
+            size: 10,
+          }, controller.signal),
+          trySJFVariant("bFacet-false", SJF_SEARCH_URL, {
+            ...buildSJFPayload(query, 0, 10),
+            bFacet: false,
+          }, controller.signal),
+          trySJFVariant("sjfsemanal", "https://sjfsemanal.scjn.gob.mx/services/sjftesismicroservice/api/public/tesis", buildSJFPayload(query, 0, 10), controller.signal),
+          trySJFVariant("page0-size10", SJF_SEARCH_URL, {
+            ...buildSJFPayload(query, 0, 10),
+            pageNumber: 0,
+          }, controller.signal),
+        ]);
+
+        clearTimeout(timeout);
+        return NextResponse.json({ diagnostic: true, variants });
+      }
+
+      const from = (page - 1) * PAGE_SIZE;
+      const payload = buildSJFPayload(query, from, PAGE_SIZE);
+
       const response = await fetch(SJF_SEARCH_URL, {
         method: "POST",
         headers: SJF_HEADERS,
@@ -165,13 +240,6 @@ export async function POST(request: NextRequest) {
         pageSize: results.length || PAGE_SIZE,
         query,
         page,
-        _debug: {
-          documentsReturned: documents.length,
-          from,
-          size: PAGE_SIZE,
-          sjfTotal: total,
-          sjfTotalPage: data.totalPage,
-        },
       });
     } catch (fetchErr) {
       clearTimeout(timeout);
