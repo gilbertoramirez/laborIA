@@ -14,7 +14,7 @@ const SJF_HEADERS: Record<string, string> = {
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
 };
 
-function buildSJFPayload(query: string, page: number, pageSize: number) {
+function buildSJFPayload(query: string, page: number) {
   return {
     bFacet: true,
     classifiers: [
@@ -27,7 +27,10 @@ function buildSJFPayload(query: string, page: number, pageSize: number) {
       },
       {
         name: "numInstancia",
-        value: ["6", "60", "7", "70", "8", "80", "1", "10", "2", "20", "3", "30", "4", "40", "5", "50"],
+        value: [
+          "6", "60", "7", "70", "8", "80", "1", "10", "2", "20", "3", "30",
+          "4", "40", "5", "50",
+        ],
         allSelected: false,
         isMatrix: false,
         visible: false,
@@ -64,7 +67,7 @@ function buildSJFPayload(query: string, page: number, pageSize: number) {
       },
     ],
     pageNumber: page,
-    pageSize: pageSize,
+    pageSize: 10,
     sortField: "relevancia",
     sortDirection: "desc",
   };
@@ -87,9 +90,58 @@ interface SJFDocument {
   textoPublicacion: string;
 }
 
+function mapDocument(doc: SJFDocument) {
+  return {
+    id: doc.id,
+    ius: doc.ius,
+    registro: doc.id,
+    rubro: doc.rubro || "(Sin rubro)",
+    texto: doc.texto || "",
+    epoca: doc.epocaAbr || "",
+    instancia: doc.sala || doc.instanciaAbr || "",
+    instanciaAbr: doc.instanciaAbr || "",
+    tipo:
+      doc.ta_tj === 1 || doc.tipoTesis === "1"
+        ? "Jurisprudencia"
+        : "Tesis aislada",
+    claveTesis: doc.claveTesis || "",
+    fechaPublicacion: doc.fechaPublicacion || "",
+    localizacion: doc.localizacion || "",
+    fuente: doc.fuente || "SJF",
+    textoPublicacion: doc.textoPublicacion || "",
+  };
+}
+
+async function fetchSJFPage(
+  query: string,
+  sjfPage: number,
+  signal: AbortSignal
+): Promise<{ documents: SJFDocument[]; total: number }> {
+  const payload = buildSJFPayload(query, sjfPage);
+  const response = await fetch(SJF_SEARCH_URL, {
+    method: "POST",
+    headers: SJF_HEADERS,
+    body: JSON.stringify(payload),
+    signal,
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    return { documents: [], total: 0 };
+  }
+
+  const data = await response.json();
+  return {
+    documents: data.documents || [],
+    total: data.total || 0,
+  };
+}
+
+const PAGE_SIZE = 10;
+
 export async function POST(request: NextRequest) {
   try {
-    const { query, page = 1, pageSize = 10 } = await request.json();
+    const { query, page = 1 } = await request.json();
 
     if (!query || typeof query !== "string") {
       return NextResponse.json(
@@ -98,88 +150,83 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const payload = buildSJFPayload(query, page, pageSize);
-
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
 
-    const response = await fetch(SJF_SEARCH_URL, {
-      method: "POST",
-      headers: SJF_HEADERS,
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-      cache: "no-store",
-    });
+    try {
+      const firstSjfPage = (page - 1) * PAGE_SIZE + 1;
 
-    clearTimeout(timeout);
+      const firstResult = await fetchSJFPage(query, firstSjfPage, controller.signal);
+      const total = firstResult.total;
 
-    if (!response.ok) {
-      const text = await response.text();
-      console.error("SJF API error:", response.status, text);
-      return NextResponse.json(
-        { error: `Error del SJF: ${response.status}` },
-        { status: 502 }
-      );
-    }
-
-    const data = await response.json();
-
-    const debugKeys = Object.keys(data);
-    const debugArrayFields: Record<string, number> = {};
-    for (const key of debugKeys) {
-      if (Array.isArray(data[key])) {
-        debugArrayFields[key] = data[key].length;
+      if (total === 0 || firstResult.documents.length === 0) {
+        clearTimeout(timeout);
+        return NextResponse.json({
+          results: [],
+          total: 0,
+          totalPages: 0,
+          pageSize: PAGE_SIZE,
+          query,
+          page,
+        });
       }
-    }
-    console.log("SJF response keys:", debugKeys);
-    console.log("SJF array fields:", debugArrayFields);
-    console.log("SJF total:", data.total, "totalPage:", data.totalPage);
-    if (data.documents) {
-      console.log("SJF documents count:", Array.isArray(data.documents) ? data.documents.length : typeof data.documents);
-      if (Array.isArray(data.documents) && data.documents[0]) {
-        console.log("SJF first doc keys:", Object.keys(data.documents[0]));
+
+      const apiReturnsOnePerPage = firstResult.documents.length === 1 && total > 1;
+
+      let allDocuments: SJFDocument[];
+
+      if (apiReturnsOnePerPage) {
+        const remaining = Math.min(PAGE_SIZE - 1, total - firstSjfPage);
+        const batchPromises: Promise<{ documents: SJFDocument[]; total: number }>[] = [];
+
+        for (let i = 1; i <= remaining; i++) {
+          batchPromises.push(
+            fetchSJFPage(query, firstSjfPage + i, controller.signal)
+          );
+        }
+
+        const batchResults = await Promise.all(batchPromises);
+        clearTimeout(timeout);
+
+        allDocuments = [...firstResult.documents];
+        for (const r of batchResults) {
+          allDocuments.push(...r.documents);
+        }
+
+        const seen = new Set<string>();
+        allDocuments = allDocuments.filter((doc) => {
+          if (seen.has(doc.id)) return false;
+          seen.add(doc.id);
+          return true;
+        });
+      } else {
+        clearTimeout(timeout);
+        allDocuments = firstResult.documents;
       }
+
+      const results = allDocuments.map(mapDocument);
+      const totalPages = apiReturnsOnePerPage
+        ? Math.ceil(total / PAGE_SIZE)
+        : Math.ceil(total / Math.max(allDocuments.length, 1));
+
+      return NextResponse.json({
+        results,
+        total,
+        totalPages,
+        pageSize: results.length,
+        query,
+        page,
+      });
+    } catch (fetchErr) {
+      clearTimeout(timeout);
+      if (fetchErr instanceof Error && fetchErr.name === "AbortError") {
+        return NextResponse.json(
+          { error: "Tiempo de espera agotado conectando con el SJF" },
+          { status: 504 }
+        );
+      }
+      throw fetchErr;
     }
-
-    const documents: SJFDocument[] = data.documents || [];
-    const results = documents.map((doc) => ({
-      id: doc.id,
-      ius: doc.ius,
-      registro: doc.id,
-      rubro: doc.rubro || "(Sin rubro)",
-      texto: doc.texto || "",
-      epoca: doc.epocaAbr || "",
-      instancia: doc.sala || doc.instanciaAbr || "",
-      instanciaAbr: doc.instanciaAbr || "",
-      tipo:
-        doc.ta_tj === 1 || doc.tipoTesis === "1"
-          ? "Jurisprudencia"
-          : "Tesis aislada",
-      claveTesis: doc.claveTesis || "",
-      fechaPublicacion: doc.fechaPublicacion || "",
-      localizacion: doc.localizacion || "",
-      fuente: doc.fuente || "SJF",
-      textoPublicacion: doc.textoPublicacion || "",
-    }));
-
-    const total = data.total || 0;
-    const calculatedTotalPages = pageSize > 0 ? Math.ceil(total / pageSize) : 0;
-
-    return NextResponse.json({
-      results,
-      total,
-      totalPages: calculatedTotalPages,
-      pageSize,
-      query,
-      page,
-      _debug: {
-        responseKeys: debugKeys,
-        arrayFields: debugArrayFields,
-        documentsCount: documents.length,
-        sjfTotalPage: data.totalPage,
-        firstDocKeys: documents[0] ? Object.keys(documents[0]) : [],
-      },
-    });
   } catch (error) {
     console.error("SJF search error:", error);
     return NextResponse.json(
@@ -221,7 +268,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ tesis: data });
     } catch (fetchErr) {
       clearTimeout(timeout);
-      const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+      const msg =
+        fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
       console.error("SJF detail fetch error:", msg);
       return NextResponse.json(
         { error: `Error conectando con SJF: ${msg}` },
