@@ -14,7 +14,7 @@ const SJF_HEADERS: Record<string, string> = {
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
 };
 
-function buildSJFPayload(query: string, from: number, size: number) {
+function buildSJFPayload(query: string) {
   return {
     bFacet: true,
     classifiers: [
@@ -66,10 +66,8 @@ function buildSJFPayload(query: string, from: number, size: number) {
         operatorUser: "Y",
       },
     ],
-    from,
-    size,
-    pageNumber: Math.floor(from / size) + 1,
-    pageSize: size,
+    pageNumber: 1,
+    pageSize: 10,
     sortField: "relevancia",
     sortDirection: "desc",
   };
@@ -114,61 +112,9 @@ function mapDocument(doc: SJFDocument) {
   };
 }
 
-const PAGE_SIZE = 10;
-
-async function getSJFSessionCookies(signal: AbortSignal): Promise<string> {
-  try {
-    const res = await fetch("https://sjf2.scjn.gob.mx/busqueda-principal-tesis", {
-      headers: {
-        "User-Agent": SJF_HEADERS["User-Agent"],
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      },
-      signal,
-      cache: "no-store",
-      redirect: "follow",
-    });
-    const setCookies = res.headers.getSetCookie?.() || [];
-    return setCookies.map((c: string) => c.split(";")[0]).join("; ");
-  } catch {
-    return "";
-  }
-}
-
-async function trySJFVariant(
-  label: string,
-  url: string,
-  payload: Record<string, unknown>,
-  signal: AbortSignal,
-  extraHeaders?: Record<string, string>
-): Promise<{ label: string; count: number; total: number; ids: string[]; error?: string }> {
-  try {
-    const headers = { ...SJF_HEADERS, ...extraHeaders };
-    const response = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(payload),
-      signal,
-      cache: "no-store",
-    });
-    if (!response.ok) {
-      return { label, count: 0, total: 0, ids: [], error: `HTTP ${response.status}` };
-    }
-    const data = await response.json();
-    const docs = Array.isArray(data.documents) ? data.documents : [];
-    return {
-      label,
-      count: docs.length,
-      total: data.total || 0,
-      ids: docs.map((d: { id: string }) => d.id),
-    };
-  } catch (e) {
-    return { label, count: 0, total: 0, ids: [], error: String(e) };
-  }
-}
-
 export async function POST(request: NextRequest) {
   try {
-    const { query, page = 1, diagnostic = false } = await request.json();
+    const { query } = await request.json();
 
     if (!query || typeof query !== "string") {
       return NextResponse.json(
@@ -177,49 +123,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const payload = buildSJFPayload(query);
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
 
     try {
-      if (diagnostic) {
-        const baseSearchTerms = [
-          {
-            expression: query,
-            fields: ["localizacionBusqueda", "rubro", "texto"],
-            fieldsText: "Localización, Rubro (título y subtítulo), Texto",
-            fieldsUser: "Localización: \\nRubro (título y subtítulo): \\nTexto: ",
-            esInicial: true,
-            esNRD: false,
-            lsFields: [],
-            operator: 0,
-            operatorText: "Y",
-            operatorUser: "Y",
-          },
-        ];
-
-        const cookies = await getSJFSessionCookies(controller.signal);
-        const stdPayload = buildSJFPayload(query, 0, 10);
-
-        const variants = await Promise.all([
-          trySJFVariant("with-cookies", SJF_SEARCH_URL, stdPayload, controller.signal,
-            cookies ? { Cookie: cookies, "X-Requested-With": "XMLHttpRequest" } : {}),
-          trySJFVariant("xhr-header", SJF_SEARCH_URL, stdPayload, controller.signal,
-            { "X-Requested-With": "XMLHttpRequest" }),
-          trySJFVariant("no-origin", SJF_SEARCH_URL, stdPayload, controller.signal,
-            { Origin: "", Referer: "" }),
-          trySJFVariant("accept-only-json", SJF_SEARCH_URL, stdPayload, controller.signal,
-            { Accept: "application/json" }),
-        ]);
-
-        const cookieInfo = cookies ? cookies.substring(0, 100) : "(no cookies returned)";
-
-        clearTimeout(timeout);
-        return NextResponse.json({ diagnostic: true, cookies: cookieInfo, variants });
-      }
-
-      const from = (page - 1) * PAGE_SIZE;
-      const payload = buildSJFPayload(query, from, PAGE_SIZE);
-
       const response = await fetch(SJF_SEARCH_URL, {
         method: "POST",
         headers: SJF_HEADERS,
@@ -244,13 +153,13 @@ export async function POST(request: NextRequest) {
       const total = data.total || 0;
       const results = documents.map(mapDocument);
 
+      const sjfSearchUrl = `https://sjf2.scjn.gob.mx/listado-resultado-tesis`;
+
       return NextResponse.json({
         results,
         total,
-        totalPages: Math.ceil(total / PAGE_SIZE),
-        pageSize: results.length || PAGE_SIZE,
         query,
-        page,
+        sjfSearchUrl,
       });
     } catch (fetchErr) {
       clearTimeout(timeout);

@@ -13,10 +13,9 @@ import {
   Save,
   Database,
   Globe,
-  ChevronLeft,
-  ChevronRight,
   CheckSquare,
   Square,
+  Hash,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -61,10 +60,12 @@ export default function Jurisprudencia() {
   const [externSearched, setExternSearched] = useState(false);
   const [externError, setExternError] = useState("");
   const [externTotal, setExternTotal] = useState(0);
-  const [externPage, setExternPage] = useState(1);
-  const [externTotalPages, setExternTotalPages] = useState(0);
-  const [externPageSize, setExternPageSize] = useState(10);
-  const [debugInfo, setDebugInfo] = useState<Record<string, unknown> | null>(null);
+  const [externSjfUrl, setExternSjfUrl] = useState("");
+
+  const [iusQuery, setIusQuery] = useState("");
+  const [iusLoading, setIusLoading] = useState(false);
+  const [iusResult, setIusResult] = useState<TesisExterna | null>(null);
+  const [iusError, setIusError] = useState("");
 
   const [iaResults, setIaResults] = useState<TesisGuardada[]>([]);
   const [iaSearching, setIaSearching] = useState(false);
@@ -79,26 +80,7 @@ export default function Jurisprudencia() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchSaving, setBatchSaving] = useState(false);
 
-  async function runDiagnostic() {
-    if (!query.trim()) return;
-    setExternSearching(true);
-    setDebugInfo(null);
-    try {
-      const res = await fetch("/api/jurisprudencia/buscar", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: query.trim(), diagnostic: true }),
-      });
-      const data = await res.json();
-      setDebugInfo(data);
-    } catch (err) {
-      setDebugInfo({ error: String(err) });
-    } finally {
-      setExternSearching(false);
-    }
-  }
-
-  async function searchExtern(page: number) {
+  async function searchExtern() {
     if (!query.trim() || externSearching) return;
 
     setExternSearching(true);
@@ -111,7 +93,7 @@ export default function Jurisprudencia() {
       const res = await fetch("/api/jurisprudencia/buscar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: query.trim(), page }),
+        body: JSON.stringify({ query: query.trim() }),
       });
 
       if (!res.ok) {
@@ -122,13 +104,9 @@ export default function Jurisprudencia() {
       }
 
       const data = await res.json();
-      const results = data.results || [];
-      setExternResults(results);
+      setExternResults(data.results || []);
       setExternTotal(data.total || 0);
-      setExternPage(data.page || 1);
-      setExternPageSize(data.pageSize || results.length || 10);
-      setExternTotalPages(data.totalPages || 0);
-      if (data._debug) setDebugInfo(data._debug);
+      setExternSjfUrl(data.sjfSearchUrl || "https://sjf2.scjn.gob.mx/busqueda-principal-tesis");
     } catch (err) {
       setExternError(
         err instanceof Error ? err.message : "Error conectando con el SJF"
@@ -136,6 +114,49 @@ export default function Jurisprudencia() {
       setExternResults([]);
     } finally {
       setExternSearching(false);
+    }
+  }
+
+  async function lookupIus() {
+    const num = iusQuery.trim();
+    if (!num || iusLoading) return;
+
+    setIusLoading(true);
+    setIusError("");
+    setIusResult(null);
+
+    try {
+      const res = await fetch(`/api/jurisprudencia/buscar?id=${encodeURIComponent(num)}`);
+      if (!res.ok) {
+        throw new Error("No se encontró la tesis con ese número IUS");
+      }
+      const data = await res.json();
+      if (!data.tesis) {
+        throw new Error("No se encontró la tesis");
+      }
+      const t = data.tesis;
+      const mapped: TesisExterna = {
+        id: t.id || num,
+        ius: t.ius || Number(num),
+        registro: t.id || num,
+        rubro: t.rubro || "(Sin rubro)",
+        texto: t.texto || "",
+        epoca: t.epocaAbr || "",
+        instancia: t.sala || t.instanciaAbr || "",
+        instanciaAbr: t.instanciaAbr || "",
+        tipo: t.ta_tj === 1 || t.tipoTesis === "1" ? "Jurisprudencia" : "Tesis aislada",
+        claveTesis: t.claveTesis || "",
+        fechaPublicacion: t.fechaPublicacion || "",
+        localizacion: t.localizacion || "",
+        fuente: t.fuente || "SJF",
+        textoPublicacion: t.textoPublicacion || "",
+      };
+      setIusResult(mapped);
+      setSelectedTesis(mapped);
+    } catch (err) {
+      setIusError(err instanceof Error ? err.message : "Error buscando tesis");
+    } finally {
+      setIusLoading(false);
     }
   }
 
@@ -167,7 +188,7 @@ export default function Jurisprudencia() {
 
   function handleSearch(e?: React.FormEvent) {
     e?.preventDefault();
-    if (tab === "externa") searchExtern(1);
+    if (tab === "externa") searchExtern();
     else handleIaSearch(e);
   }
 
@@ -323,7 +344,7 @@ export default function Jurisprudencia() {
       {/* Search bar */}
       <form
         onSubmit={handleSearch}
-        className="mb-8 animate-fade-in animate-fade-in-delay-1"
+        className="mb-6 animate-fade-in animate-fade-in-delay-1"
       >
         <div className="relative">
           <Search
@@ -365,14 +386,79 @@ export default function Jurisprudencia() {
         </div>
       </form>
 
-      {tab === "externa" && query.trim() && (
-        <button
-          onClick={runDiagnostic}
-          disabled={externSearching}
-          className="mb-4 px-3 py-1.5 text-xs bg-yellow-100 text-yellow-800 rounded border border-yellow-300 hover:bg-yellow-200 disabled:opacity-50"
-        >
-          Diagnóstico API (temporal)
-        </button>
+      {/* IUS Lookup (only on externa tab) */}
+      {tab === "externa" && (
+        <div className="mb-8 animate-fade-in">
+          <div className="flex items-center gap-3">
+            <div className="relative flex-1 max-w-xs">
+              <Hash
+                size={16}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted"
+              />
+              <input
+                type="text"
+                value={iusQuery}
+                onChange={(e) => setIusQuery(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && lookupIus()}
+                placeholder="Buscar por número IUS..."
+                className="w-full pl-9 pr-4 py-2.5 border border-border rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-colors"
+              />
+            </div>
+            <button
+              onClick={lookupIus}
+              disabled={!iusQuery.trim() || iusLoading}
+              className="inline-flex items-center gap-2 px-4 py-2.5 border border-border rounded-lg text-sm text-text-secondary hover:bg-stone-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {iusLoading ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Search size={14} />
+              )}
+              Buscar IUS
+            </button>
+          </div>
+          {iusError && (
+            <p className="mt-2 text-xs text-red-600">{iusError}</p>
+          )}
+          {iusResult && (
+            <div className="mt-3 bg-white rounded-xl border border-brand/30 p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 text-xs text-text-muted mb-1">
+                    <span>{iusResult.epoca}</span>
+                    <span>&middot;</span>
+                    <span>{iusResult.instanciaAbr}</span>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                        iusResult.tipo === "Jurisprudencia"
+                          ? "bg-brand-light text-brand"
+                          : "bg-stone-100 text-text-secondary"
+                      }`}
+                    >
+                      {iusResult.tipo}
+                    </span>
+                  </div>
+                  <h3
+                    className="text-sm font-semibold text-text-primary mb-1 leading-snug cursor-pointer hover:text-brand transition-colors"
+                    onClick={() => setSelectedTesis(iusResult)}
+                  >
+                    {iusResult.rubro}
+                  </h3>
+                  <p className="text-[10px] font-mono text-text-muted">
+                    IUS: {iusResult.ius}
+                  </p>
+                </div>
+                <SaveButton
+                  status={saveStatuses[iusResult.id] || "idle"}
+                  onClick={() => {
+                    const s = saveStatuses[iusResult.id] || "idle";
+                    if (s === "idle" || s === "error") saveSingleTesis(iusResult);
+                  }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {/* ========== External search tab ========== */}
@@ -424,20 +510,29 @@ export default function Jurisprudencia() {
             </div>
           )}
 
-          {debugInfo && (
-            <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-xs font-mono text-yellow-800 overflow-x-auto whitespace-pre-wrap">
-              <strong>DEBUG:</strong> {JSON.stringify(debugInfo, null, 2)}
-            </div>
-          )}
-
           {externResults.length > 0 && (
             <div className="animate-fade-in">
+              {/* SJF results banner */}
+              <div className="flex items-center justify-between mb-4 p-3 bg-blue-50 rounded-xl border border-blue-100">
+                <p className="text-sm text-blue-800">
+                  <strong>{externTotal.toLocaleString()}</strong> tesis encontradas en el SJF
+                </p>
+                <a
+                  href={externSjfUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 transition-colors"
+                >
+                  <ExternalLink size={12} />
+                  Ver todos en el SJF
+                </a>
+              </div>
+
               {/* Results header with batch actions */}
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-4">
                   <p className="text-xs text-text-muted">
-                    {externTotal.toLocaleString()} tesis encontradas &middot;
-                    Página {externPage} de {externTotalPages}
+                    Mostrando {externResults.length} resultado{externResults.length !== 1 ? "s" : ""}
                   </p>
                   {savedCount > 0 && (
                     <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 px-2 py-0.5 rounded-full">
@@ -486,7 +581,6 @@ export default function Jurisprudencia() {
                     const isSelected = selectedIds.has(t.id);
                     const isSaved = status === "saved" || status === "exists";
                     const preview = getPreviewText(t);
-                    const resultNum = (externPage - 1) * externPageSize + idx + 1;
 
                     return (
                       <div
@@ -518,7 +612,7 @@ export default function Jurisprudencia() {
                               )}
                             </button>
                             <span className="text-xs font-mono text-text-muted w-5 text-right">
-                              {resultNum}
+                              {idx + 1}
                             </span>
                           </div>
 
@@ -589,29 +683,6 @@ export default function Jurisprudencia() {
                       </div>
                     );
                   })}
-
-                  {/* Pagination */}
-                  <div className="flex items-center justify-between pt-4">
-                    <button
-                      onClick={() => searchExtern(externPage - 1)}
-                      disabled={externPage <= 1 || externSearching}
-                      className="inline-flex items-center gap-1 px-3 py-2 text-sm text-text-secondary border border-border rounded-lg hover:bg-stone-50 disabled:opacity-30 disabled:cursor-not-allowed"
-                    >
-                      <ChevronLeft size={14} />
-                      Anterior
-                    </button>
-                    <span className="text-xs text-text-muted">
-                      Página {externPage} de {externTotalPages}
-                    </span>
-                    <button
-                      onClick={() => searchExtern(externPage + 1)}
-                      disabled={externPage >= externTotalPages || externSearching}
-                      className="inline-flex items-center gap-1 px-3 py-2 text-sm text-text-secondary border border-border rounded-lg hover:bg-stone-50 disabled:opacity-30 disabled:cursor-not-allowed"
-                    >
-                      Siguiente
-                      <ChevronRight size={14} />
-                    </button>
-                  </div>
                 </div>
 
                 <div className="col-span-2">
