@@ -108,6 +108,7 @@ export async function POST(request: NextRequest) {
       headers: SJF_HEADERS,
       body: JSON.stringify(payload),
       signal: controller.signal,
+      cache: "no-store",
     });
 
     clearTimeout(timeout);
@@ -144,10 +145,14 @@ export async function POST(request: NextRequest) {
       textoPublicacion: doc.textoPublicacion || "",
     }));
 
+    const total = data.total || 0;
+    const calculatedTotalPages = pageSize > 0 ? Math.ceil(total / pageSize) : 0;
+
     return NextResponse.json({
       results,
-      total: data.total || 0,
-      totalPages: data.totalPage || 0,
+      total,
+      totalPages: calculatedTotalPages,
+      pageSize,
       query,
       page,
     });
@@ -176,6 +181,7 @@ export async function GET(request: NextRequest) {
       const response = await fetch(`${SJF_DETAIL_URL}/${id}`, {
         headers: SJF_HEADERS,
         signal: controller.signal,
+        cache: "no-store",
       });
 
       clearTimeout(timeout);

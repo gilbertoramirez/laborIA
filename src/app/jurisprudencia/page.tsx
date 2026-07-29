@@ -63,6 +63,7 @@ export default function Jurisprudencia() {
   const [externTotal, setExternTotal] = useState(0);
   const [externPage, setExternPage] = useState(1);
   const [externTotalPages, setExternTotalPages] = useState(0);
+  const [externPageSize, setExternPageSize] = useState(10);
 
   const [iaResults, setIaResults] = useState<TesisGuardada[]>([]);
   const [iaSearching, setIaSearching] = useState(false);
@@ -101,9 +102,11 @@ export default function Jurisprudencia() {
       }
 
       const data = await res.json();
-      setExternResults(data.results || []);
+      const results = data.results || [];
+      setExternResults(results);
       setExternTotal(data.total || 0);
       setExternPage(data.page || 1);
+      setExternPageSize(data.pageSize || results.length || 10);
       setExternTotalPages(data.totalPages || 0);
     } catch (err) {
       setExternError(
@@ -446,7 +449,7 @@ export default function Jurisprudencia() {
                     const isSelected = selectedIds.has(t.id);
                     const isSaved = status === "saved" || status === "exists";
                     const preview = getPreviewText(t);
-                    const resultNum = (externPage - 1) * 10 + idx + 1;
+                    const resultNum = (externPage - 1) * externPageSize + idx + 1;
 
                     return (
                       <div
