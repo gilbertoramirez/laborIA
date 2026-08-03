@@ -122,6 +122,7 @@ function DocumentosChat() {
   const [sending, setSending] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -140,6 +141,32 @@ function DocumentosChat() {
       setLoadingDocs(false);
     }
   }, []);
+
+  async function handleDelete(filename: string) {
+    if (deleting) return;
+    setDeleting(filename);
+    try {
+      const res = await fetch("/api/documentos/list", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename }),
+      });
+      if (res.ok) {
+        setDocs((prev) => prev.filter((d) => d.filename !== filename));
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: `Documento "${filename}" eliminado. Ya no será usado como contexto.`,
+          },
+        ]);
+      }
+    } catch {
+      /* ignore */
+    } finally {
+      setDeleting(null);
+    }
+  }
 
   useEffect(() => {
     loadDocs();
@@ -358,6 +385,18 @@ function DocumentosChat() {
                             {new Date(doc.created_at).toLocaleDateString("es-MX")}
                           </p>
                         </div>
+                        <button
+                          onClick={() => handleDelete(doc.filename)}
+                          disabled={deleting === doc.filename}
+                          className="shrink-0 p-1 text-text-muted opacity-0 group-hover:opacity-100 hover:text-red-500 hover:bg-red-50 rounded transition-all"
+                          title="Eliminar documento"
+                        >
+                          {deleting === doc.filename ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : (
+                            <X size={12} />
+                          )}
+                        </button>
                       </div>
                     ))}
 
