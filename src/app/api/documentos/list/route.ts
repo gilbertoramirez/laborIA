@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
 export async function GET() {
@@ -34,6 +34,46 @@ export async function GET() {
     return NextResponse.json({ documents: docs });
   } catch (error) {
     console.error("List error:", error);
+    return NextResponse.json(
+      { error: "Error procesando solicitud" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { filename } = await request.json();
+
+    if (!filename || typeof filename !== "string") {
+      return NextResponse.json(
+        { error: "Se requiere el nombre del archivo" },
+        { status: 400 }
+      );
+    }
+
+    const supabase = getSupabaseAdmin();
+
+    const { error, count } = await supabase
+      .from("document_chunks")
+      .delete({ count: "exact" })
+      .eq("source_filename", filename);
+
+    if (error) {
+      console.error("Delete doc error:", error);
+      return NextResponse.json(
+        { error: "Error eliminando documento" },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      filename,
+      chunks_deleted: count ?? 0,
+    });
+  } catch (error) {
+    console.error("Delete error:", error);
     return NextResponse.json(
       { error: "Error procesando solicitud" },
       { status: 500 }

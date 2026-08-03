@@ -161,3 +161,9 @@ create policy "Allow public read tesis" on tesis_guardadas
 
 create policy "Allow public insert tesis" on tesis_guardadas
   for insert with check (true);
+
+create policy "Allow public delete" on document_chunks
+  for delete using (true);
+
+create policy "Allow public delete tesis" on tesis_guardadas
+  for delete using (true);

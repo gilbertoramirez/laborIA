@@ -14,28 +14,24 @@ const SJF_HEADERS: Record<string, string> = {
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
 };
 
-function buildSJFPayload(query: string, page: number, pageSize: number) {
+function buildSJFPayload(query: string, page: number = 1, pageSize: number = 10) {
   return {
     bFacet: true,
     classifiers: [
       {
         name: "idEpoca",
         value: ["210", "200", "100", "5"],
-        allSelected: false,
+        allSelected: true,
         isMatrix: false,
         visible: false,
       },
       {
         name: "numInstancia",
-        value: ["6", "60", "7", "70", "8", "80", "1", "10", "2", "20", "3", "30", "4", "40", "5", "50"],
-        allSelected: false,
-        isMatrix: false,
-        visible: false,
-      },
-      {
-        name: "tipoDocumento",
-        value: ["1"],
-        allSelected: false,
+        value: [
+          "6", "60", "7", "70", "8", "80", "1", "10", "2", "20", "3", "30",
+          "4", "40", "5", "50",
+        ],
+        allSelected: true,
         isMatrix: false,
         visible: false,
       },
@@ -64,7 +60,7 @@ function buildSJFPayload(query: string, page: number, pageSize: number) {
       },
     ],
     pageNumber: page,
-    pageSize: pageSize,
+    pageSize,
     sortField: "relevancia",
     sortDirection: "desc",
   };
@@ -87,9 +83,35 @@ interface SJFDocument {
   textoPublicacion: string;
 }
 
+function mapDocument(doc: SJFDocument) {
+  return {
+    id: doc.id,
+    ius: doc.ius,
+    registro: doc.id,
+    rubro: doc.rubro || "(Sin rubro)",
+    texto: doc.texto || "",
+    epoca: doc.epocaAbr || "",
+    instancia: doc.sala || doc.instanciaAbr || "",
+    instanciaAbr: doc.instanciaAbr || "",
+    tipo:
+      doc.ta_tj === 1 || doc.tipoTesis === "1"
+        ? "Jurisprudencia"
+        : doc.ta_tj === 2 || doc.tipoTesis === "2"
+          ? "Precedente"
+          : doc.ta_tj === 0 || doc.tipoTesis === "0"
+            ? "Tesis aislada"
+            : "Tesis aislada",
+    claveTesis: doc.claveTesis || "",
+    fechaPublicacion: doc.fechaPublicacion || "",
+    localizacion: doc.localizacion || "",
+    fuente: doc.fuente || "SJF",
+    textoPublicacion: doc.textoPublicacion || "",
+  };
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const { query, page = 1, pageSize = 10 } = await request.json();
+    const { query } = await request.json();
 
     if (!query || typeof query !== "string") {
       return NextResponse.json(
@@ -98,59 +120,54 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const payload = buildSJFPayload(query, page, pageSize);
+    const payload = buildSJFPayload(query);
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
 
-    const response = await fetch(SJF_SEARCH_URL, {
-      method: "POST",
-      headers: SJF_HEADERS,
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
+    try {
+      const response = await fetch(SJF_SEARCH_URL, {
+        method: "POST",
+        headers: SJF_HEADERS,
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+        cache: "no-store",
+      });
 
-    clearTimeout(timeout);
+      clearTimeout(timeout);
 
-    if (!response.ok) {
-      const text = await response.text();
-      console.error("SJF API error:", response.status, text);
-      return NextResponse.json(
-        { error: `Error del SJF: ${response.status}` },
-        { status: 502 }
-      );
+      if (!response.ok) {
+        const text = await response.text();
+        console.error("SJF API error:", response.status, text);
+        return NextResponse.json(
+          { error: `Error del SJF: ${response.status}` },
+          { status: 502 }
+        );
+      }
+
+      const data = await response.json();
+      const documents: SJFDocument[] = data.documents || [];
+      const total = data.total || 0;
+      const results = documents.map(mapDocument);
+
+      const sjfSearchUrl = `https://sjf2.scjn.gob.mx/listado-resultado-tesis`;
+
+      return NextResponse.json({
+        results,
+        total,
+        query,
+        sjfSearchUrl,
+      });
+    } catch (fetchErr) {
+      clearTimeout(timeout);
+      if (fetchErr instanceof Error && fetchErr.name === "AbortError") {
+        return NextResponse.json(
+          { error: "Tiempo de espera agotado conectando con el SJF" },
+          { status: 504 }
+        );
+      }
+      throw fetchErr;
     }
-
-    const data = await response.json();
-
-    const documents: SJFDocument[] = data.documents || [];
-    const results = documents.map((doc) => ({
-      id: doc.id,
-      ius: doc.ius,
-      registro: doc.id,
-      rubro: doc.rubro || "(Sin rubro)",
-      texto: doc.texto || "",
-      epoca: doc.epocaAbr || "",
-      instancia: doc.sala || doc.instanciaAbr || "",
-      instanciaAbr: doc.instanciaAbr || "",
-      tipo:
-        doc.ta_tj === 1 || doc.tipoTesis === "1"
-          ? "Jurisprudencia"
-          : "Tesis aislada",
-      claveTesis: doc.claveTesis || "",
-      fechaPublicacion: doc.fechaPublicacion || "",
-      localizacion: doc.localizacion || "",
-      fuente: doc.fuente || "SJF",
-      textoPublicacion: doc.textoPublicacion || "",
-    }));
-
-    return NextResponse.json({
-      results,
-      total: data.total || 0,
-      totalPages: data.totalPage || 0,
-      query,
-      page,
-    });
   } catch (error) {
     console.error("SJF search error:", error);
     return NextResponse.json(
@@ -176,6 +193,7 @@ export async function GET(request: NextRequest) {
       const response = await fetch(`${SJF_DETAIL_URL}/${id}`, {
         headers: SJF_HEADERS,
         signal: controller.signal,
+        cache: "no-store",
       });
 
       clearTimeout(timeout);
@@ -191,7 +209,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ tesis: data });
     } catch (fetchErr) {
       clearTimeout(timeout);
-      const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+      const msg =
+        fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
       console.error("SJF detail fetch error:", msg);
       return NextResponse.json(
         { error: `Error conectando con SJF: ${msg}` },
