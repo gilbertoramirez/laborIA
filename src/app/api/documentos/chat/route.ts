@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 
+interface ContextChunk {
+  content: string;
+  source_filename: string;
+  chunk_index: number;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { question, history = [] } = await request.json();
@@ -22,40 +28,18 @@ export async function POST(request: NextRequest) {
       .filter((w) => w.length > 2)
       .slice(0, 8);
 
-    let chunks: Array<{
-      id: string;
-      content: string;
-      source_filename: string;
-      chunk_index: number;
-      rank?: number;
-    }> | null = null;
+    // Search both document_chunks and tesis_guardadas in parallel
+    const [docChunks, tesisChunks] = await Promise.all([
+      searchDocumentChunks(supabase, searchWords),
+      searchTesisGuardadas(supabase, searchWords),
+    ]);
 
-    const tsquery = searchWords.join(" | ");
-    const { data: tsChunks, error: searchError } = await supabase.rpc(
-      "search_documents_text",
-      { search_query: tsquery, match_count: 5 }
-    );
+    const chunks: ContextChunk[] = [...docChunks, ...tesisChunks];
 
-    if (!searchError && tsChunks && tsChunks.length > 0) {
-      chunks = tsChunks;
-    } else {
-      if (searchError) console.error("FTS error (using fallback):", searchError);
-
-      const { data: fallbackChunks } = await supabase
-        .from("document_chunks")
-        .select("id, content, source_filename, chunk_index")
-        .or(searchWords.map((w) => `content.ilike.%${w}%`).join(","))
-        .limit(5);
-
-      if (fallbackChunks && fallbackChunks.length > 0) {
-        chunks = fallbackChunks;
-      }
-    }
-
-    if (!chunks || chunks.length === 0) {
+    if (chunks.length === 0) {
       return NextResponse.json({
         answer:
-          "No encontré información relevante en los documentos subidos. Intenta con otra pregunta o sube más documentos.",
+          "No encontré información relevante en tus documentos ni en tus tesis guardadas. Intenta con otra pregunta, sube más documentos, o guarda tesis desde la sección de Jurisprudencia.",
         sources: [],
       });
     }
@@ -107,12 +91,12 @@ export async function POST(request: NextRequest) {
             {
               role: "system",
               content:
-                "Eres un asistente legal mexicano experto. Responde basándote ÚNICAMENTE en los fragmentos de documentos proporcionados. Si la información no está en los fragmentos, di que no tienes esa información. Responde en español, de forma clara y concisa. Cuando cites información, menciona el nombre del documento fuente.",
+                "Eres un asistente legal mexicano experto. Responde basándote ÚNICAMENTE en los fragmentos proporcionados, que pueden venir de documentos subidos o de tesis/jurisprudencias guardadas del SJF. Si la información no está en los fragmentos, di que no tienes esa información. Responde en español, de forma clara y concisa. Cuando cites información, menciona el nombre del documento o tesis fuente.",
             },
             ...historyMessages,
             {
               role: "user",
-              content: `FRAGMENTOS DE DOCUMENTOS:\n${context}\n\nPREGUNTA: ${question}`,
+              content: `FRAGMENTOS DE DOCUMENTOS Y TESIS:\n${context}\n\nPREGUNTA: ${question}`,
             },
           ],
           max_tokens: 1000,
@@ -150,8 +134,66 @@ export async function POST(request: NextRequest) {
   }
 }
 
+async function searchDocumentChunks(
+  supabase: ReturnType<Awaited<typeof import("@/lib/supabase")>["getSupabaseAdmin"]>,
+  searchWords: string[]
+): Promise<ContextChunk[]> {
+  if (searchWords.length === 0) return [];
+
+  const tsquery = searchWords.join(" | ");
+  const { data: tsChunks, error: searchError } = await supabase.rpc(
+    "search_documents_text",
+    { search_query: tsquery, match_count: 5 }
+  );
+
+  if (!searchError && tsChunks && tsChunks.length > 0) {
+    return tsChunks.map((c: { content: string; source_filename: string; chunk_index: number }) => ({
+      content: c.content,
+      source_filename: c.source_filename,
+      chunk_index: c.chunk_index,
+    }));
+  }
+
+  if (searchError) console.error("FTS error (using fallback):", searchError);
+
+  const { data: fallbackChunks } = await supabase
+    .from("document_chunks")
+    .select("content, source_filename, chunk_index")
+    .or(searchWords.map((w) => `content.ilike.%${w}%`).join(","))
+    .limit(5);
+
+  return (fallbackChunks || []).map((c) => ({
+    content: c.content,
+    source_filename: c.source_filename,
+    chunk_index: c.chunk_index,
+  }));
+}
+
+async function searchTesisGuardadas(
+  supabase: ReturnType<Awaited<typeof import("@/lib/supabase")>["getSupabaseAdmin"]>,
+  searchWords: string[]
+): Promise<ContextChunk[]> {
+  if (searchWords.length === 0) return [];
+
+  const { data } = await supabase
+    .from("tesis_guardadas")
+    .select("rubro, texto, registro")
+    .or(
+      searchWords
+        .flatMap((w) => [`rubro.ilike.%${w}%`, `texto.ilike.%${w}%`])
+        .join(",")
+    )
+    .limit(3);
+
+  return (data || []).map((t, i) => ({
+    content: `${t.rubro}\n\n${t.texto}`,
+    source_filename: `Tesis ${t.registro || "guardada"}`,
+    chunk_index: i,
+  }));
+}
+
 function formatChunksAsAnswer(
-  chunks: Array<{ content: string; source_filename: string }>,
+  chunks: ContextChunk[],
   question: string
 ): string {
   const intro = `Encontré ${chunks.length} fragmento${chunks.length > 1 ? "s" : ""} relevante${chunks.length > 1 ? "s" : ""} para "${question}":\n\n`;
