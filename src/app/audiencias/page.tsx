@@ -121,6 +121,9 @@ export default function Audiencias() {
       });
 
       if (!res.ok) {
+        if (res.status === 504) {
+          throw new Error("Tiempo agotado. El audio es muy largo para el plan gratuito de Vercel (máx. ~1-2 min). Intenta con un audio más corto.");
+        }
         const text = await res.text();
         let msg = "Error en la transcripción";
         try { msg = JSON.parse(text).error || msg; } catch { /* */ }

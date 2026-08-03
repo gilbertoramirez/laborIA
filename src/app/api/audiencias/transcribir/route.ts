@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+export const maxDuration = 60;
+
 const GROQ_WHISPER_URL =
   "https://api.groq.com/openai/v1/audio/transcriptions";
 
