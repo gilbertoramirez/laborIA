@@ -111,7 +111,7 @@ function mapDocument(doc: SJFDocument) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { query, page = 1 } = await request.json();
+    const { query } = await request.json();
 
     if (!query || typeof query !== "string") {
       return NextResponse.json(
@@ -120,8 +120,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const pageNum = Math.max(1, Math.floor(Number(page) || 1));
-    const payload = buildSJFPayload(query, pageNum);
+    const payload = buildSJFPayload(query);
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
@@ -156,8 +155,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         results,
         total,
-        page: pageNum,
-        totalPages: Math.ceil(total / 10),
         query,
         sjfSearchUrl,
       });

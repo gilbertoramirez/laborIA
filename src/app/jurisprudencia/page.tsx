@@ -16,8 +16,6 @@ import {
   CheckSquare,
   Square,
   Hash,
-  ChevronLeft,
-  ChevronRight,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -53,18 +51,6 @@ interface TesisGuardada {
 type Tab = "externa" | "ia";
 type SaveStatus = "idle" | "saving" | "loading-text" | "saved" | "exists" | "error";
 
-function paginationRange(current: number, total: number): (number | "...")[] {
-  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
-  const pages: (number | "...")[] = [];
-  pages.push(1);
-  if (current > 3) pages.push("...");
-  const start = Math.max(2, current - 1);
-  const end = Math.min(total - 1, current + 1);
-  for (let i = start; i <= end; i++) pages.push(i);
-  if (current < total - 2) pages.push("...");
-  pages.push(total);
-  return pages;
-}
 
 export default function Jurisprudencia() {
   const [tab, setTab] = useState<Tab>("externa");
@@ -76,8 +62,6 @@ export default function Jurisprudencia() {
   const [externError, setExternError] = useState("");
   const [externTotal, setExternTotal] = useState(0);
   const [externSjfUrl, setExternSjfUrl] = useState("");
-  const [externPage, setExternPage] = useState(1);
-  const [externTotalPages, setExternTotalPages] = useState(0);
 
   const [iusQuery, setIusQuery] = useState("");
   const [iusLoading, setIusLoading] = useState(false);
@@ -97,7 +81,7 @@ export default function Jurisprudencia() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchSaving, setBatchSaving] = useState(false);
 
-  async function searchExtern(page: number = 1) {
+  async function searchExtern() {
     if (!query.trim() || externSearching) return;
 
     setExternSearching(true);
@@ -110,7 +94,7 @@ export default function Jurisprudencia() {
       const res = await fetch("/api/jurisprudencia/buscar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: query.trim(), page }),
+        body: JSON.stringify({ query: query.trim() }),
       });
 
       if (!res.ok) {
@@ -123,8 +107,6 @@ export default function Jurisprudencia() {
       const data = await res.json();
       setExternResults(data.results || []);
       setExternTotal(data.total || 0);
-      setExternPage(data.page || 1);
-      setExternTotalPages(data.totalPages || 0);
       setExternSjfUrl(data.sjfSearchUrl || "https://sjf2.scjn.gob.mx/busqueda-principal-tesis");
     } catch (err) {
       setExternError(
@@ -134,11 +116,6 @@ export default function Jurisprudencia() {
     } finally {
       setExternSearching(false);
     }
-  }
-
-  function goToPage(page: number) {
-    if (page < 1 || page > externTotalPages || externSearching) return;
-    searchExtern(page);
   }
 
   async function lookupIus() {
@@ -549,22 +526,28 @@ export default function Jurisprudencia() {
           {externResults.length > 0 && (
             <div className="animate-fade-in">
               {/* SJF results banner */}
-              <div className="flex items-center justify-between mb-4 p-3 bg-blue-50 rounded-xl border border-blue-100">
-                <p className="text-sm text-blue-800">
-                  <strong>{externTotal.toLocaleString()}</strong> resultados en el SJF
-                  {externTotalPages > 1 && (
-                    <span className="text-blue-600"> &middot; Página {externPage} de {externTotalPages}</span>
-                  )}
-                </p>
-                <a
-                  href={externSjfUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 transition-colors"
-                >
-                  <ExternalLink size={12} />
-                  Ver todos en el SJF
-                </a>
+              <div className="mb-4 p-4 bg-blue-50 rounded-xl border border-blue-100">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-blue-800">
+                      <strong>{externTotal.toLocaleString()}</strong> resultados encontrados en el SJF
+                    </p>
+                    {externTotal > externResults.length && (
+                      <p className="text-xs text-blue-600 mt-1">
+                        Mostrando una vista previa. Abre el SJF para ver todos los resultados y navegar entre páginas.
+                      </p>
+                    )}
+                  </div>
+                  <a
+                    href={externSjfUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="shrink-0 inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+                  >
+                    <ExternalLink size={14} />
+                    Ver todos en el SJF
+                  </a>
+                </div>
               </div>
 
               {/* Results header with batch actions */}
@@ -650,8 +633,8 @@ export default function Jurisprudencia() {
                                 <Square size={18} />
                               )}
                             </button>
-                            <span className="text-xs font-mono text-text-muted w-6 text-right">
-                              {(externPage - 1) * 10 + idx + 1}
+                            <span className="text-xs font-mono text-text-muted w-5 text-right">
+                              {idx + 1}
                             </span>
                           </div>
 
@@ -728,49 +711,6 @@ export default function Jurisprudencia() {
                 </div>
               </div>
 
-              {/* Pagination */}
-              {externTotalPages > 1 && (
-                <div className="flex items-center justify-center gap-2 mt-8">
-                  <button
-                    onClick={() => goToPage(externPage - 1)}
-                    disabled={externPage <= 1 || externSearching}
-                    className="inline-flex items-center gap-1 px-3 py-2 border border-border rounded-lg text-sm text-text-secondary hover:bg-stone-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                  >
-                    <ChevronLeft size={16} />
-                    Anterior
-                  </button>
-
-                  {paginationRange(externPage, externTotalPages).map((p, i) =>
-                    p === "..." ? (
-                      <span key={`dots-${i}`} className="px-2 text-text-muted text-sm">
-                        ...
-                      </span>
-                    ) : (
-                      <button
-                        key={p}
-                        onClick={() => goToPage(p as number)}
-                        disabled={externSearching}
-                        className={`min-w-[36px] px-2 py-2 rounded-lg text-sm font-medium transition-colors ${
-                          p === externPage
-                            ? "bg-brand text-white"
-                            : "border border-border text-text-secondary hover:bg-stone-50"
-                        }`}
-                      >
-                        {p}
-                      </button>
-                    )
-                  )}
-
-                  <button
-                    onClick={() => goToPage(externPage + 1)}
-                    disabled={externPage >= externTotalPages || externSearching}
-                    className="inline-flex items-center gap-1 px-3 py-2 border border-border rounded-lg text-sm text-text-secondary hover:bg-stone-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                  >
-                    Siguiente
-                    <ChevronRight size={16} />
-                  </button>
-                </div>
-              )}
             </div>
           )}
         </>
