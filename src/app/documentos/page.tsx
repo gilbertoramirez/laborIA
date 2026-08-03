@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
-  Search,
   Plus,
   FileText,
   FileCheck,
@@ -18,6 +17,10 @@ import {
   User,
   FileUp,
   BookOpen,
+  ChevronDown,
+  ChevronRight,
+  Search,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -29,10 +32,16 @@ interface UploadedDoc {
   created_at: string;
 }
 
+interface ChatSource {
+  filename: string;
+  excerpt?: string;
+  chunkIndex?: number;
+}
+
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
-  sources?: { filename: string; similarity: number; excerpt?: string }[];
+  sources?: ChatSource[];
 }
 
 const plantillas = [
@@ -40,6 +49,13 @@ const plantillas = [
   { id: "contestacion", label: "Contestación", icon: FileCheck },
   { id: "contrato", label: "Contrato individual", icon: ScrollText },
   { id: "convenio", label: "Convenio", icon: Handshake },
+];
+
+const suggestedQuestions = [
+  "¿De qué trata este documento?",
+  "¿Cuáles son los puntos clave?",
+  "Resume las conclusiones principales",
+  "¿Qué artículos de ley se mencionan?",
 ];
 
 export default function Documentos() {
@@ -76,7 +92,7 @@ export default function Documentos() {
           }`}
         >
           <MessageSquare size={16} />
-          Mis documentos + Chat IA
+          Chat con documentos
         </button>
         <button
           onClick={() => setDocTab("plantillas")}
@@ -105,9 +121,11 @@ function DocumentosChat() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const loadDocs = useCallback(async () => {
     try {
@@ -182,11 +200,11 @@ function DocumentosChat() {
     if (file) handleUpload(file);
   }
 
-  async function handleSend(e?: React.FormEvent) {
+  async function handleSend(e?: React.FormEvent, questionOverride?: string) {
     e?.preventDefault();
-    if (!input.trim() || sending) return;
+    const question = questionOverride || input.trim();
+    if (!question || sending) return;
 
-    const question = input.trim();
     setInput("");
     setMessages((prev) => [...prev, { role: "user", content: question }]);
     setSending(true);
@@ -217,37 +235,6 @@ function DocumentosChat() {
           sources: data.sources,
         },
       ]);
-
-      if (data.loading) {
-        setTimeout(async () => {
-          setSending(true);
-          try {
-            const retryRes = await fetch("/api/documentos/chat", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ question, history: messages.slice(-6) }),
-            });
-            if (retryRes.ok) {
-              const retryData = await retryRes.json();
-              if (!retryData.loading) {
-                setMessages((prev) => [
-                  ...prev.slice(0, -1),
-                  {
-                    role: "assistant",
-                    content: retryData.answer,
-                    sources: retryData.sources,
-                  },
-                ]);
-              }
-            }
-          } catch {
-            /* ignore retry */
-          } finally {
-            setSending(false);
-          }
-        }, 20000);
-        return;
-      }
     } catch (err) {
       setMessages((prev) => [
         ...prev,
@@ -258,28 +245,45 @@ function DocumentosChat() {
       ]);
     } finally {
       setSending(false);
+      inputRef.current?.focus();
     }
   }
 
+  const hasDocuments = docs.length > 0;
+
   return (
-    <div className="grid grid-cols-12 gap-6 animate-fade-in animate-fade-in-delay-1">
-      {/* Sidebar: uploaded docs */}
-      <div className="col-span-3">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-text-muted">
-            Documentos subidos
-          </h2>
+    <div className="animate-fade-in animate-fade-in-delay-1">
+      <div className="bg-white rounded-xl border border-border flex flex-col h-[calc(100vh-260px)] min-h-[500px]">
+        {/* Top bar */}
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="p-1.5 text-text-muted hover:text-text-secondary hover:bg-stone-50 rounded-lg transition-colors"
+            title={sidebarOpen ? "Ocultar documentos" : "Mostrar documentos"}
+          >
+            <FileIcon size={16} />
+          </button>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-sm font-medium text-text-primary">
+              Chat con documentos
+            </h2>
+            <p className="text-[10px] text-text-muted">
+              {hasDocuments
+                ? `${docs.length} documento${docs.length !== 1 ? "s" : ""} cargado${docs.length !== 1 ? "s" : ""}`
+                : "Sube un documento para comenzar"}
+            </p>
+          </div>
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
-            className="inline-flex items-center gap-1 px-2 py-1 text-xs text-brand hover:bg-brand-light rounded transition-colors"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-brand bg-brand-light hover:bg-brand/10 rounded-lg transition-colors font-medium"
           >
             {uploading ? (
               <Loader2 size={12} className="animate-spin" />
             ) : (
               <Upload size={12} />
             )}
-            Subir
+            {uploading ? "Subiendo..." : "Subir PDF"}
           </button>
           <input
             ref={fileInputRef}
@@ -290,228 +294,303 @@ function DocumentosChat() {
           />
         </div>
 
-        {uploadError && (
-          <div className="flex items-center gap-2 p-2 bg-red-50 rounded-lg mb-3 text-xs text-red-700">
-            <AlertCircle size={14} />
-            {uploadError}
-          </div>
-        )}
-
-        {loadingDocs ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 size={20} className="animate-spin text-text-muted" />
-          </div>
-        ) : docs.length === 0 ? (
-          <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragOver(true);
-            }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={handleDrop}
-            className={`border-2 border-dashed rounded-xl p-6 text-center transition-colors ${
-              dragOver
-                ? "border-brand bg-brand-light"
-                : "border-border"
-            }`}
-          >
-            <FileUp
-              size={32}
-              className="mx-auto mb-3 text-text-muted"
-            />
-            <p className="text-sm text-text-muted mb-2">
-              Arrastra un PDF o TXT aquí
-            </p>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="text-xs text-brand hover:underline"
-            >
-              o haz clic para seleccionar
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-1.5">
-            {docs.map((doc) => (
-              <div
-                key={doc.filename + doc.created_at}
-                className="flex items-center gap-2.5 px-3 py-2.5 bg-white rounded-lg border border-border hover:shadow-sm transition-all"
-              >
-                <FileIcon size={16} className="text-brand shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-text-primary truncate">
-                    {doc.filename}
-                  </p>
-                  <p className="text-[10px] text-text-muted">
-                    {new Date(doc.created_at).toLocaleDateString("es-MX")}
-                  </p>
-                </div>
+        <div className="flex flex-1 overflow-hidden">
+          {/* Sidebar: uploaded docs */}
+          {sidebarOpen && (
+            <div className="w-56 border-r border-border flex flex-col shrink-0">
+              <div className="p-3 flex items-center justify-between">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+                  Documentos
+                </span>
+                <button
+                  onClick={() => setSidebarOpen(false)}
+                  className="p-0.5 text-text-muted hover:text-text-secondary"
+                >
+                  <X size={12} />
+                </button>
               </div>
-            ))}
 
-            <div
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragOver(true);
-              }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={handleDrop}
-              className={`border-2 border-dashed rounded-lg p-3 text-center text-xs text-text-muted mt-3 transition-colors cursor-pointer hover:border-brand/40 ${
-                dragOver ? "border-brand bg-brand-light" : "border-border"
-              }`}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <Upload size={14} className="mx-auto mb-1" />
-              Subir otro documento
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Chat area */}
-      <div className="col-span-9">
-        <div className="bg-white rounded-xl border border-border flex flex-col h-[calc(100vh-280px)] min-h-[500px]">
-          {/* Chat messages */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-4">
-            {messages.length === 0 && (
-              <div className="flex flex-col items-center justify-center h-full text-center">
-                <Bot size={48} className="text-text-muted mb-4" />
-                <h3 className="text-lg font-semibold text-text-primary mb-2">
-                  Chat con tus documentos
-                </h3>
-                <p className="text-sm text-text-muted max-w-md mb-6">
-                  Sube un PDF o archivo de texto y hazme preguntas sobre su
-                  contenido. Uso IA para buscar en los documentos y darte
-                  respuestas precisas.
-                </p>
-                <div className="flex gap-4 text-xs text-text-muted">
-                  <div className="flex items-center gap-1.5">
-                    <Upload size={14} />
-                    <span>1. Sube documentos</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Search size={14} />
-                    <span>2. Pregunta lo que quieras</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Bot size={14} />
-                    <span>3. Recibe respuestas con fuentes</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {messages.map((msg, i) => (
-              <div
-                key={i}
-                className={`flex gap-3 ${
-                  msg.role === "user" ? "justify-end" : ""
-                }`}
-              >
-                {msg.role === "assistant" && (
-                  <div className="w-8 h-8 rounded-full bg-brand-light flex items-center justify-center shrink-0">
-                    <Bot size={16} className="text-brand" />
+              <div className="flex-1 overflow-y-auto px-2 pb-2">
+                {uploadError && (
+                  <div className="flex items-center gap-2 p-2 bg-red-50 rounded-lg mb-2 text-xs text-red-700">
+                    <AlertCircle size={12} />
+                    <span className="truncate">{uploadError}</span>
                   </div>
                 )}
 
-                <div
-                  className={`max-w-[70%] rounded-xl px-4 py-3 ${
-                    msg.role === "user"
-                      ? "bg-brand text-white"
-                      : "bg-stone-50 text-text-primary border border-border"
-                  }`}
-                >
-                  <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                    {msg.content}
-                  </p>
+                {loadingDocs ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 size={16} className="animate-spin text-text-muted" />
+                  </div>
+                ) : docs.length === 0 ? (
+                  <div
+                    onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                    onDragLeave={() => setDragOver(false)}
+                    onDrop={handleDrop}
+                    className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors ${
+                      dragOver ? "border-brand bg-brand-light" : "border-border"
+                    }`}
+                  >
+                    <FileUp size={24} className="mx-auto mb-2 text-text-muted" />
+                    <p className="text-xs text-text-muted mb-1">
+                      Arrastra un archivo
+                    </p>
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="text-[10px] text-brand hover:underline"
+                    >
+                      o selecciona uno
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {docs.map((doc) => (
+                      <div
+                        key={doc.filename + doc.created_at}
+                        className="flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-stone-50 transition-colors group"
+                      >
+                        <FileIcon size={14} className="text-brand shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs text-text-primary truncate">
+                            {doc.filename}
+                          </p>
+                          <p className="text-[10px] text-text-muted">
+                            {new Date(doc.created_at).toLocaleDateString("es-MX")}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
 
-                  {msg.sources && msg.sources.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-border/50">
-                      <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1.5">
-                        Fuentes
+                    <div
+                      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                      onDragLeave={() => setDragOver(false)}
+                      onDrop={handleDrop}
+                      className={`border border-dashed rounded-lg p-2 text-center text-[10px] text-text-muted mt-2 transition-colors cursor-pointer hover:border-brand/40 ${
+                        dragOver ? "border-brand bg-brand-light" : "border-border"
+                      }`}
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <Upload size={12} className="mx-auto mb-0.5" />
+                      Subir más
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Chat area */}
+          <div className="flex-1 flex flex-col min-w-0">
+            {/* Messages */}
+            <div
+              className="flex-1 overflow-y-auto p-6 space-y-5"
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={handleDrop}
+            >
+              {messages.length === 0 && (
+                <div className="flex flex-col items-center justify-center h-full text-center">
+                  {!hasDocuments ? (
+                    <>
+                      <div className="w-16 h-16 rounded-2xl bg-brand-light flex items-center justify-center mb-5">
+                        <FileUp size={28} className="text-brand" />
+                      </div>
+                      <h3 className="text-lg font-semibold text-text-primary mb-2">
+                        Sube un documento para comenzar
+                      </h3>
+                      <p className="text-sm text-text-muted max-w-sm mb-6">
+                        Arrastra un PDF aquí o usa el botón &quot;Subir PDF&quot;.
+                        Después podrás chatear con el contenido del documento.
                       </p>
-                      <div className="space-y-1">
-                        {msg.sources.map((s, j) => (
-                          <div
-                            key={j}
-                            className="flex items-center gap-2 text-xs text-text-secondary"
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="inline-flex items-center gap-2 px-5 py-2.5 bg-brand text-white rounded-lg text-sm font-medium hover:bg-brand-dark transition-colors"
+                      >
+                        <Upload size={16} />
+                        Subir documento
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <div className="w-16 h-16 rounded-2xl bg-brand-light flex items-center justify-center mb-5">
+                        <Bot size={28} className="text-brand" />
+                      </div>
+                      <h3 className="text-lg font-semibold text-text-primary mb-2">
+                        Pregunta sobre tus documentos
+                      </h3>
+                      <p className="text-sm text-text-muted max-w-sm mb-6">
+                        Tengo {docs.length} documento{docs.length !== 1 ? "s" : ""} listo{docs.length !== 1 ? "s" : ""}.
+                        Hazme cualquier pregunta sobre su contenido.
+                      </p>
+                      <div className="grid grid-cols-2 gap-2 max-w-md">
+                        {suggestedQuestions.map((q) => (
+                          <button
+                            key={q}
+                            onClick={() => handleSend(undefined, q)}
+                            className="text-left px-3 py-2.5 text-xs text-text-secondary bg-stone-50 hover:bg-stone-100 border border-border rounded-lg transition-colors"
                           >
-                            <BookOpen size={10} className="shrink-0" />
-                            <span className="truncate">{s.filename}</span>
-                            <span className="text-text-muted shrink-0">
-                              {Math.round(s.similarity * 100)}%
-                            </span>
-                          </div>
+                            {q}
+                          </button>
                         ))}
                       </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {messages.map((msg, i) => (
+                <div
+                  key={i}
+                  className={`flex gap-3 ${
+                    msg.role === "user" ? "justify-end" : ""
+                  }`}
+                >
+                  {msg.role === "assistant" && (
+                    <div className="w-7 h-7 rounded-full bg-brand-light flex items-center justify-center shrink-0 mt-0.5">
+                      <Bot size={14} className="text-brand" />
+                    </div>
+                  )}
+
+                  <div
+                    className={`max-w-[75%] ${
+                      msg.role === "user"
+                        ? "bg-brand text-white rounded-2xl rounded-br-md px-4 py-3"
+                        : "space-y-2"
+                    }`}
+                  >
+                    {msg.role === "user" ? (
+                      <p className="text-sm leading-relaxed">{msg.content}</p>
+                    ) : (
+                      <>
+                        <div className="bg-stone-50 border border-border rounded-2xl rounded-bl-md px-4 py-3">
+                          <p className="text-sm leading-relaxed text-text-primary whitespace-pre-wrap">
+                            {msg.content}
+                          </p>
+                        </div>
+
+                        {msg.sources && msg.sources.length > 0 && (
+                          <SourcesCollapsible sources={msg.sources} />
+                        )}
+                      </>
+                    )}
+                  </div>
+
+                  {msg.role === "user" && (
+                    <div className="w-7 h-7 rounded-full bg-brand flex items-center justify-center shrink-0 mt-0.5">
+                      <User size={14} className="text-white" />
                     </div>
                   )}
                 </div>
+              ))}
 
-                {msg.role === "user" && (
-                  <div className="w-8 h-8 rounded-full bg-brand flex items-center justify-center shrink-0">
-                    <User size={16} className="text-white" />
+              {sending && (
+                <div className="flex gap-3">
+                  <div className="w-7 h-7 rounded-full bg-brand-light flex items-center justify-center shrink-0 mt-0.5">
+                    <Bot size={14} className="text-brand" />
                   </div>
-                )}
-              </div>
-            ))}
-
-            {sending && (
-              <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-full bg-brand-light flex items-center justify-center shrink-0">
-                  <Bot size={16} className="text-brand" />
-                </div>
-                <div className="bg-stone-50 border border-border rounded-xl px-4 py-3">
-                  <div className="flex items-center gap-2 text-sm text-text-muted">
-                    <Loader2 size={14} className="animate-spin" />
-                    Analizando documentos...
+                  <div className="bg-stone-50 border border-border rounded-2xl rounded-bl-md px-4 py-3">
+                    <div className="flex items-center gap-2 text-sm text-text-muted">
+                      <Loader2 size={14} className="animate-spin" />
+                      Analizando documentos...
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
-
-            <div ref={chatEndRef} />
-          </div>
-
-          {/* Input */}
-          <form
-            onSubmit={handleSend}
-            className="border-t border-border p-4 flex gap-3"
-          >
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-              className="shrink-0 p-2.5 text-text-muted hover:text-brand hover:bg-brand-light rounded-lg transition-colors"
-              title="Subir documento"
-            >
-              {uploading ? (
-                <Loader2 size={18} className="animate-spin" />
-              ) : (
-                <Upload size={18} />
               )}
-            </button>
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder={
-                docs.length === 0
-                  ? "Sube un documento primero..."
-                  : "Pregunta sobre tus documentos..."
-              }
-              disabled={sending}
-              className="flex-1 px-4 py-2.5 border border-border rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-colors disabled:opacity-50"
-            />
-            <button
-              type="submit"
-              disabled={!input.trim() || sending}
-              className="shrink-0 px-4 py-2.5 bg-brand text-white rounded-xl text-sm font-medium hover:bg-brand-dark transition-colors active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+
+              {dragOver && (
+                <div className="absolute inset-0 bg-brand/5 border-2 border-dashed border-brand rounded-xl flex items-center justify-center z-10">
+                  <div className="text-center">
+                    <Upload size={32} className="text-brand mx-auto mb-2" />
+                    <p className="text-sm font-medium text-brand">Suelta para subir</p>
+                  </div>
+                </div>
+              )}
+
+              <div ref={chatEndRef} />
+            </div>
+
+            {/* Input */}
+            <form
+              onSubmit={handleSend}
+              className="border-t border-border p-3 flex gap-2"
             >
-              <Send size={16} />
-            </button>
-          </form>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="shrink-0 p-2.5 text-text-muted hover:text-brand hover:bg-brand-light rounded-lg transition-colors"
+                title="Subir documento"
+              >
+                {uploading ? (
+                  <Loader2 size={18} className="animate-spin" />
+                ) : (
+                  <Upload size={18} />
+                )}
+              </button>
+              <input
+                ref={inputRef}
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder={
+                  !hasDocuments
+                    ? "Sube un documento primero..."
+                    : "Pregunta sobre tus documentos..."
+                }
+                disabled={sending}
+                className="flex-1 px-4 py-2.5 border border-border rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-colors disabled:opacity-50"
+              />
+              <button
+                type="submit"
+                disabled={!input.trim() || sending}
+                className="shrink-0 p-2.5 bg-brand text-white rounded-xl hover:bg-brand-dark transition-colors active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Send size={16} />
+              </button>
+            </form>
+          </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function SourcesCollapsible({ sources }: { sources: ChatSource[] }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="ml-0.5">
+      <button
+        onClick={() => setOpen(!open)}
+        className="inline-flex items-center gap-1.5 text-[11px] text-text-muted hover:text-text-secondary transition-colors"
+      >
+        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        <BookOpen size={11} />
+        {sources.length} fuente{sources.length !== 1 ? "s" : ""}
+      </button>
+
+      {open && (
+        <div className="mt-1.5 ml-1 space-y-1.5">
+          {sources.map((s, j) => (
+            <div
+              key={j}
+              className="bg-stone-50 border border-border rounded-lg px-3 py-2"
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <FileIcon size={11} className="text-brand shrink-0" />
+                <span className="text-xs font-medium text-text-primary truncate">
+                  {s.filename}
+                </span>
+              </div>
+              {s.excerpt && (
+                <p className="text-[11px] text-text-muted leading-relaxed line-clamp-2">
+                  {s.excerpt}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -60,10 +60,18 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const sources = chunks.map((c) => ({
-      filename: c.source_filename,
-      excerpt: c.content.substring(0, 200) + "...",
-    }));
+    const seen = new Set<string>();
+    const sources = chunks
+      .map((c) => ({
+        filename: c.source_filename,
+        chunkIndex: c.chunk_index,
+        excerpt: c.content.substring(0, 200) + "...",
+      }))
+      .filter((s) => {
+        if (seen.has(s.filename)) return false;
+        seen.add(s.filename);
+        return true;
+      });
 
     const context = chunks
       .map((c, i) => `[${i + 1}. ${c.source_filename}]:\n${c.content}`)
@@ -99,7 +107,7 @@ export async function POST(request: NextRequest) {
             {
               role: "system",
               content:
-                "Eres un asistente legal mexicano experto. Responde basándote ÚNICAMENTE en los fragmentos de documentos proporcionados. Si la información no está en los fragmentos, di que no tienes esa información. Responde en español, de forma clara y concisa.",
+                "Eres un asistente legal mexicano experto. Responde basándote ÚNICAMENTE en los fragmentos de documentos proporcionados. Si la información no está en los fragmentos, di que no tienes esa información. Responde en español, de forma clara y concisa. Cuando cites información, menciona el nombre del documento fuente.",
             },
             ...historyMessages,
             {
@@ -107,7 +115,7 @@ export async function POST(request: NextRequest) {
               content: `FRAGMENTOS DE DOCUMENTOS:\n${context}\n\nPREGUNTA: ${question}`,
             },
           ],
-          max_tokens: 500,
+          max_tokens: 1000,
           temperature: 0.3,
         }),
         signal: controller.signal,
