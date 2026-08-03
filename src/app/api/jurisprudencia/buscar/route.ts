@@ -37,7 +37,7 @@ function buildSJFPayload(query: string) {
       },
       {
         name: "tipoDocumento",
-        value: ["2"],
+        value: ["1", "2"],
         allSelected: false,
         isMatrix: false,
         visible: false,
