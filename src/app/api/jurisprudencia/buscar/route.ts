@@ -37,7 +37,7 @@ function buildSJFPayload(query: string) {
       },
       {
         name: "tipoDocumento",
-        value: ["1"],
+        value: ["2"],
         allSelected: false,
         isMatrix: false,
         visible: false,
@@ -103,7 +103,9 @@ function mapDocument(doc: SJFDocument) {
     tipo:
       doc.ta_tj === 1 || doc.tipoTesis === "1"
         ? "Jurisprudencia"
-        : "Tesis aislada",
+        : doc.tipoTesis === "2"
+          ? "Precedente"
+          : "Tesis aislada",
     claveTesis: doc.claveTesis || "",
     fechaPublicacion: doc.fechaPublicacion || "",
     localizacion: doc.localizacion || "",
