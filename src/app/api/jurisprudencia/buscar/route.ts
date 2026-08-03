@@ -14,14 +14,14 @@ const SJF_HEADERS: Record<string, string> = {
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
 };
 
-function buildSJFPayload(query: string) {
+function buildSJFPayload(query: string, page: number = 1, pageSize: number = 10) {
   return {
     bFacet: true,
     classifiers: [
       {
         name: "idEpoca",
         value: ["210", "200", "100", "5"],
-        allSelected: false,
+        allSelected: true,
         isMatrix: false,
         visible: false,
       },
@@ -31,14 +31,7 @@ function buildSJFPayload(query: string) {
           "6", "60", "7", "70", "8", "80", "1", "10", "2", "20", "3", "30",
           "4", "40", "5", "50",
         ],
-        allSelected: false,
-        isMatrix: false,
-        visible: false,
-      },
-      {
-        name: "tipoDocumento",
-        value: ["1", "2"],
-        allSelected: false,
+        allSelected: true,
         isMatrix: false,
         visible: false,
       },
@@ -66,8 +59,8 @@ function buildSJFPayload(query: string) {
         operatorUser: "Y",
       },
     ],
-    pageNumber: 1,
-    pageSize: 10,
+    pageNumber: page,
+    pageSize,
     sortField: "relevancia",
     sortDirection: "desc",
   };
@@ -103,9 +96,11 @@ function mapDocument(doc: SJFDocument) {
     tipo:
       doc.ta_tj === 1 || doc.tipoTesis === "1"
         ? "Jurisprudencia"
-        : doc.tipoTesis === "2"
+        : doc.ta_tj === 2 || doc.tipoTesis === "2"
           ? "Precedente"
-          : "Tesis aislada",
+          : doc.ta_tj === 0 || doc.tipoTesis === "0"
+            ? "Tesis aislada"
+            : "Tesis aislada",
     claveTesis: doc.claveTesis || "",
     fechaPublicacion: doc.fechaPublicacion || "",
     localizacion: doc.localizacion || "",
@@ -116,7 +111,7 @@ function mapDocument(doc: SJFDocument) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { query } = await request.json();
+    const { query, page = 1 } = await request.json();
 
     if (!query || typeof query !== "string") {
       return NextResponse.json(
@@ -125,7 +120,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const payload = buildSJFPayload(query);
+    const pageNum = Math.max(1, Math.floor(Number(page) || 1));
+    const payload = buildSJFPayload(query, pageNum);
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
@@ -160,6 +156,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         results,
         total,
+        page: pageNum,
+        totalPages: Math.ceil(total / 10),
         query,
         sjfSearchUrl,
       });

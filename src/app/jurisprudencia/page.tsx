@@ -16,6 +16,8 @@ import {
   CheckSquare,
   Square,
   Hash,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -51,6 +53,19 @@ interface TesisGuardada {
 type Tab = "externa" | "ia";
 type SaveStatus = "idle" | "saving" | "loading-text" | "saved" | "exists" | "error";
 
+function paginationRange(current: number, total: number): (number | "...")[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const pages: (number | "...")[] = [];
+  pages.push(1);
+  if (current > 3) pages.push("...");
+  const start = Math.max(2, current - 1);
+  const end = Math.min(total - 1, current + 1);
+  for (let i = start; i <= end; i++) pages.push(i);
+  if (current < total - 2) pages.push("...");
+  pages.push(total);
+  return pages;
+}
+
 export default function Jurisprudencia() {
   const [tab, setTab] = useState<Tab>("externa");
   const [query, setQuery] = useState("");
@@ -61,6 +76,8 @@ export default function Jurisprudencia() {
   const [externError, setExternError] = useState("");
   const [externTotal, setExternTotal] = useState(0);
   const [externSjfUrl, setExternSjfUrl] = useState("");
+  const [externPage, setExternPage] = useState(1);
+  const [externTotalPages, setExternTotalPages] = useState(0);
 
   const [iusQuery, setIusQuery] = useState("");
   const [iusLoading, setIusLoading] = useState(false);
@@ -80,7 +97,7 @@ export default function Jurisprudencia() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchSaving, setBatchSaving] = useState(false);
 
-  async function searchExtern() {
+  async function searchExtern(page: number = 1) {
     if (!query.trim() || externSearching) return;
 
     setExternSearching(true);
@@ -93,7 +110,7 @@ export default function Jurisprudencia() {
       const res = await fetch("/api/jurisprudencia/buscar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: query.trim() }),
+        body: JSON.stringify({ query: query.trim(), page }),
       });
 
       if (!res.ok) {
@@ -106,6 +123,8 @@ export default function Jurisprudencia() {
       const data = await res.json();
       setExternResults(data.results || []);
       setExternTotal(data.total || 0);
+      setExternPage(data.page || 1);
+      setExternTotalPages(data.totalPages || 0);
       setExternSjfUrl(data.sjfSearchUrl || "https://sjf2.scjn.gob.mx/busqueda-principal-tesis");
     } catch (err) {
       setExternError(
@@ -115,6 +134,11 @@ export default function Jurisprudencia() {
     } finally {
       setExternSearching(false);
     }
+  }
+
+  function goToPage(page: number) {
+    if (page < 1 || page > externTotalPages || externSearching) return;
+    searchExtern(page);
   }
 
   async function lookupIus() {
@@ -285,6 +309,18 @@ export default function Jurisprudencia() {
     if (s >= 0.7) return "text-brand bg-brand-light";
     if (s >= 0.5) return "text-amber-700 bg-amber-50";
     return "text-text-muted bg-stone-100";
+  }
+
+  function tipoBadgeStyle(tipo: string) {
+    switch (tipo) {
+      case "Jurisprudencia":
+        return "bg-brand-light text-brand";
+      case "Precedente":
+        return "bg-blue-50 text-blue-700";
+      case "Tesis aislada":
+      default:
+        return "bg-stone-100 text-text-secondary";
+    }
   }
 
   const savedCount = externResults.filter(
@@ -515,7 +551,10 @@ export default function Jurisprudencia() {
               {/* SJF results banner */}
               <div className="flex items-center justify-between mb-4 p-3 bg-blue-50 rounded-xl border border-blue-100">
                 <p className="text-sm text-blue-800">
-                  <strong>{externTotal.toLocaleString()}</strong> tesis encontradas en el SJF
+                  <strong>{externTotal.toLocaleString()}</strong> resultados en el SJF
+                  {externTotalPages > 1 && (
+                    <span className="text-blue-600"> &middot; Página {externPage} de {externTotalPages}</span>
+                  )}
                 </p>
                 <a
                   href={externSjfUrl}
@@ -574,8 +613,8 @@ export default function Jurisprudencia() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-5 gap-6">
-                <div className="col-span-3 space-y-3">
+              <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+                <div className="lg:col-span-3 space-y-3">
                   {externResults.map((t, idx) => {
                     const status = saveStatuses[t.id] || "idle";
                     const isSelected = selectedIds.has(t.id);
@@ -611,8 +650,8 @@ export default function Jurisprudencia() {
                                 <Square size={18} />
                               )}
                             </button>
-                            <span className="text-xs font-mono text-text-muted w-5 text-right">
-                              {idx + 1}
+                            <span className="text-xs font-mono text-text-muted w-6 text-right">
+                              {(externPage - 1) * 10 + idx + 1}
                             </span>
                           </div>
 
@@ -626,11 +665,7 @@ export default function Jurisprudencia() {
                               <span>&middot;</span>
                               <span>{t.instanciaAbr}</span>
                               <span
-                                className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                                  t.tipo === "Jurisprudencia"
-                                    ? "bg-brand-light text-brand"
-                                    : "bg-stone-100 text-text-secondary"
-                                }`}
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${tipoBadgeStyle(t.tipo)}`}
                               >
                                 {t.tipo}
                               </span>
@@ -685,13 +720,57 @@ export default function Jurisprudencia() {
                   })}
                 </div>
 
-                <div className="col-span-2">
+                <div className="lg:col-span-2">
                   <DetailPanel
                     tesis={selectedTesis}
                     onClose={() => setSelectedTesis(null)}
                   />
                 </div>
               </div>
+
+              {/* Pagination */}
+              {externTotalPages > 1 && (
+                <div className="flex items-center justify-center gap-2 mt-8">
+                  <button
+                    onClick={() => goToPage(externPage - 1)}
+                    disabled={externPage <= 1 || externSearching}
+                    className="inline-flex items-center gap-1 px-3 py-2 border border-border rounded-lg text-sm text-text-secondary hover:bg-stone-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <ChevronLeft size={16} />
+                    Anterior
+                  </button>
+
+                  {paginationRange(externPage, externTotalPages).map((p, i) =>
+                    p === "..." ? (
+                      <span key={`dots-${i}`} className="px-2 text-text-muted text-sm">
+                        ...
+                      </span>
+                    ) : (
+                      <button
+                        key={p}
+                        onClick={() => goToPage(p as number)}
+                        disabled={externSearching}
+                        className={`min-w-[36px] px-2 py-2 rounded-lg text-sm font-medium transition-colors ${
+                          p === externPage
+                            ? "bg-brand text-white"
+                            : "border border-border text-text-secondary hover:bg-stone-50"
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    )
+                  )}
+
+                  <button
+                    onClick={() => goToPage(externPage + 1)}
+                    disabled={externPage >= externTotalPages || externSearching}
+                    className="inline-flex items-center gap-1 px-3 py-2 border border-border rounded-lg text-sm text-text-secondary hover:bg-stone-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    Siguiente
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </>
@@ -732,8 +811,8 @@ export default function Jurisprudencia() {
                 {iaResults.length} resultados &middot; Ordenados por relevancia
                 semántica
               </p>
-              <div className="grid grid-cols-5 gap-6">
-                <div className="col-span-3 space-y-3">
+              <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+                <div className="lg:col-span-3 space-y-3">
                   {iaResults.map((t, idx) => (
                     <button
                       key={t.id}
@@ -797,7 +876,7 @@ export default function Jurisprudencia() {
                   ))}
                 </div>
 
-                <div className="col-span-2">
+                <div className="lg:col-span-2">
                   <DetailPanel
                     tesis={selectedTesis}
                     onClose={() => setSelectedTesis(null)}
