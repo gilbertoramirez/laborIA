@@ -121,11 +121,11 @@ export default function Audiencias() {
       });
 
       if (!res.ok) {
-        if (res.status === 504) {
-          throw new Error("Tiempo agotado. El audio es muy largo para el plan gratuito de Vercel (máx. ~1-2 min). Intenta con un audio más corto.");
+        if (res.status === 504 || res.status === 502) {
+          throw new Error("Tiempo agotado. El plan gratuito de Vercel solo permite 10 segundos por función. Intenta con un audio más corto (~30s) o usa Vercel Pro.");
         }
         const text = await res.text();
-        let msg = "Error en la transcripción";
+        let msg = `Error del servidor (${res.status})`;
         try { msg = JSON.parse(text).error || msg; } catch { /* */ }
         throw new Error(msg);
       }
@@ -136,7 +136,12 @@ export default function Audiencias() {
       setDuration(data.duration || 0);
       setStep("transcribed");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al transcribir");
+      const msg = err instanceof Error ? err.message : "Error al transcribir";
+      if (msg === "Failed to fetch" || msg.includes("network") || msg.includes("abort")) {
+        setError("La conexión se cortó. Probablemente el servidor agotó el tiempo (límite de 10s en Vercel Free). Intenta con un audio más corto.");
+      } else {
+        setError(msg);
+      }
       setStep("upload");
     }
   }
