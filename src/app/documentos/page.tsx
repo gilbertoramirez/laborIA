@@ -21,6 +21,7 @@ import {
   ChevronRight,
   Search,
   X,
+  Download,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -44,12 +45,6 @@ interface ChatMessage {
   sources?: ChatSource[];
 }
 
-const plantillas = [
-  { id: "demanda", label: "Demanda laboral", icon: FileText, active: true },
-  { id: "contestacion", label: "Contestación", icon: FileCheck },
-  { id: "contrato", label: "Contrato individual", icon: ScrollText },
-  { id: "convenio", label: "Convenio", icon: Handshake },
-];
 
 const suggestedQuestions = [
   "¿De qué trata este documento?",
@@ -634,20 +629,181 @@ function SourcesCollapsible({ sources }: { sources: ChatSource[] }) {
   );
 }
 
-function PlantillasTab() {
-  const [plantilla, setPlantilla] = useState("demanda");
-  const [parteActora, setParteActora] = useState("José López Herrera");
-  const [parteDemandada, setParteDemandada] = useState(
-    "Grupo Ferro, S.A. de C.V."
-  );
-  const [puesto, setPuesto] = useState("Operador de línea");
-  const [salario, setSalario] = useState("450.00");
-  const [fechaIngreso, setFechaIngreso] = useState("2019-03-01");
-  const [fechaDespido, setFechaDespido] = useState("2026-06-30");
+interface PlantillaField {
+  key: string;
+  label: string;
+  type?: "text" | "date" | "select";
+  prefix?: string;
+  placeholder?: string;
+  options?: { value: string; label: string }[];
+  colSpan?: 1 | 2;
+}
 
-  function formatDateES(d: string) {
-    if (!d) return "";
-    return d;
+interface PlantillaConfig {
+  id: string;
+  label: string;
+  icon: typeof FileText;
+  fields: PlantillaField[];
+  defaults: Record<string, string>;
+}
+
+const plantillaConfigs: PlantillaConfig[] = [
+  {
+    id: "demanda",
+    label: "Demanda laboral",
+    icon: FileText,
+    fields: [
+      { key: "parteActora", label: "Parte actora", placeholder: "Nombre del trabajador" },
+      { key: "parteDemandada", label: "Parte demandada", placeholder: "Nombre del patrón o empresa" },
+      { key: "puesto", label: "Puesto", placeholder: "Puesto desempeñado" },
+      { key: "salario", label: "Salario diario", prefix: "$", placeholder: "0.00" },
+      { key: "fechaIngreso", label: "Fecha de ingreso", type: "date" },
+      { key: "fechaDespido", label: "Fecha de despido", type: "date" },
+    ],
+    defaults: {
+      parteActora: "José López Herrera",
+      parteDemandada: "Grupo Ferro, S.A. de C.V.",
+      puesto: "Operador de línea",
+      salario: "450.00",
+      fechaIngreso: "2019-03-01",
+      fechaDespido: "2026-06-30",
+    },
+  },
+  {
+    id: "contestacion",
+    label: "Contestación",
+    icon: FileCheck,
+    fields: [
+      { key: "parteDemandada", label: "Parte demandada (empresa)", placeholder: "Nombre de la empresa" },
+      { key: "representanteLegal", label: "Representante legal", placeholder: "Nombre del representante" },
+      { key: "parteActora", label: "Parte actora (trabajador)", placeholder: "Nombre del trabajador" },
+      { key: "expediente", label: "Número de expediente", placeholder: "Ej: 123/2026" },
+      { key: "fechaContestacion", label: "Fecha de contestación", type: "date" },
+    ],
+    defaults: {
+      parteDemandada: "Grupo Ferro, S.A. de C.V.",
+      representanteLegal: "Lic. María García Ruiz",
+      parteActora: "José López Herrera",
+      expediente: "123/2026",
+      fechaContestacion: new Date().toISOString().slice(0, 10),
+    },
+  },
+  {
+    id: "contrato",
+    label: "Contrato individual",
+    icon: ScrollText,
+    fields: [
+      { key: "nombrePatron", label: "Nombre del patrón", placeholder: "Persona física o moral" },
+      { key: "nombreTrabajador", label: "Nombre del trabajador", placeholder: "Nombre completo" },
+      { key: "puesto", label: "Puesto", placeholder: "Puesto a desempeñar" },
+      { key: "salario", label: "Salario diario", prefix: "$", placeholder: "0.00" },
+      { key: "fechaInicio", label: "Fecha de inicio", type: "date" },
+      { key: "duracion", label: "Duración", type: "select", options: [
+        { value: "indefinido", label: "Tiempo indefinido" },
+        { value: "temporal", label: "Obra o tiempo determinado" },
+        { value: "prueba", label: "Período de prueba (30 días)" },
+      ]},
+      { key: "horario", label: "Horario", placeholder: "Ej: Lunes a Viernes 9:00 - 18:00" },
+      { key: "direccionTrabajo", label: "Dirección del centro de trabajo", placeholder: "Dirección completa" },
+    ],
+    defaults: {
+      nombrePatron: "Grupo Ferro, S.A. de C.V.",
+      nombreTrabajador: "José López Herrera",
+      puesto: "Operador de línea",
+      salario: "450.00",
+      fechaInicio: new Date().toISOString().slice(0, 10),
+      duracion: "indefinido",
+      horario: "Lunes a Viernes de 9:00 a 18:00 hrs",
+      direccionTrabajo: "Av. Industria #100, Col. Centro, CDMX",
+    },
+  },
+  {
+    id: "convenio",
+    label: "Convenio",
+    icon: Handshake,
+    fields: [
+      { key: "nombreTrabajador", label: "Nombre del trabajador", placeholder: "Nombre completo" },
+      { key: "nombrePatron", label: "Nombre del patrón", placeholder: "Persona física o moral" },
+      { key: "puesto", label: "Puesto", placeholder: "Puesto desempeñado" },
+      { key: "salario", label: "Salario diario", prefix: "$", placeholder: "0.00" },
+      { key: "fechaIngreso", label: "Fecha de ingreso", type: "date" },
+      { key: "fechaTerminacion", label: "Fecha de terminación", type: "date" },
+      { key: "liquidacionTotal", label: "Monto total de liquidación", prefix: "$", placeholder: "0.00" },
+    ],
+    defaults: {
+      nombreTrabajador: "José López Herrera",
+      nombrePatron: "Grupo Ferro, S.A. de C.V.",
+      puesto: "Operador de línea",
+      salario: "450.00",
+      fechaIngreso: "2019-03-01",
+      fechaTerminacion: new Date().toISOString().slice(0, 10),
+      liquidacionTotal: "85,000.00",
+    },
+  },
+];
+
+function formatDateES(d: string): string {
+  if (!d) return "___________";
+  const months = [
+    "enero", "febrero", "marzo", "abril", "mayo", "junio",
+    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+  ];
+  const [y, m, day] = d.split("-");
+  if (!y || !m || !day) return d;
+  return `${parseInt(day)} de ${months[parseInt(m) - 1]} de ${y}`;
+}
+
+function hl(val: string | undefined) {
+  return val || "___________";
+}
+
+function PlantillasTab() {
+  const [plantillaId, setPlantillaId] = useState("demanda");
+  const [formData, setFormData] = useState<Record<string, Record<string, string>>>(() => {
+    const initial: Record<string, Record<string, string>> = {};
+    for (const cfg of plantillaConfigs) {
+      initial[cfg.id] = { ...cfg.defaults };
+    }
+    return initial;
+  });
+  const [generating, setGenerating] = useState(false);
+
+  const config = plantillaConfigs.find((c) => c.id === plantillaId)!;
+  const data = formData[plantillaId];
+
+  function updateField(key: string, value: string) {
+    setFormData((prev) => ({
+      ...prev,
+      [plantillaId]: { ...prev[plantillaId], [key]: value },
+    }));
+  }
+
+  async function handleDownload() {
+    setGenerating(true);
+    try {
+      const { Document, Packer, Paragraph, TextRun, AlignmentType, HeadingLevel } = await import("docx");
+      const { saveAs } = await import("file-saver");
+
+      const paragraphs = buildDocxParagraphs(plantillaId, data, { Document, Paragraph, TextRun, AlignmentType, HeadingLevel });
+
+      const doc = new Document({
+        sections: [{
+          properties: {
+            page: {
+              margin: { top: 1440, bottom: 1440, left: 1440, right: 1440 },
+            },
+          },
+          children: paragraphs,
+        }],
+      });
+
+      const blob = await Packer.toBlob(doc);
+      saveAs(blob, `${config.label.replace(/\s+/g, "_")}.docx`);
+    } catch (err) {
+      console.error("Error generating docx:", err);
+    } finally {
+      setGenerating(false);
+    }
   }
 
   return (
@@ -658,13 +814,13 @@ function PlantillasTab() {
           Plantillas
         </h2>
         <div className="space-y-1">
-          {plantillas.map((p) => {
+          {plantillaConfigs.map((p) => {
             const Icon = p.icon;
-            const isActive = plantilla === p.id;
+            const isActive = plantillaId === p.id;
             return (
               <button
                 key={p.id}
-                onClick={() => setPlantilla(p.id)}
+                onClick={() => setPlantillaId(p.id)}
                 className={`w-full text-left flex items-center gap-3 px-3.5 py-2.5 rounded-lg transition-all ${
                   isActive
                     ? "bg-brand-light text-brand font-medium"
@@ -687,80 +843,65 @@ function PlantillasTab() {
               Variables dinámicas
             </h2>
             <span className="text-xs text-text-muted px-2 py-0.5 bg-stone-100 rounded">
-              Demanda laboral
+              {config.label}
             </span>
           </div>
 
           <div className="space-y-4">
-            {[
-              {
-                label: "Parte actora",
-                value: parteActora,
-                set: setParteActora,
-              },
-              {
-                label: "Parte demandada",
-                value: parteDemandada,
-                set: setParteDemandada,
-              },
-              { label: "Puesto", value: puesto, set: setPuesto },
-              {
-                label: "Salario diario",
-                value: salario,
-                set: setSalario,
-                prefix: "$",
-              },
-            ].map((f) => (
-              <div key={f.label}>
+            {config.fields.map((f) => (
+              <div key={f.key}>
                 <label className="block text-sm text-text-secondary mb-1.5">
                   {f.label}
                 </label>
-                <div className="relative">
-                  {f.prefix && (
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-text-muted">
-                      {f.prefix}
-                    </span>
-                  )}
+                {f.type === "select" ? (
+                  <select
+                    value={data[f.key] || ""}
+                    onChange={(e) => updateField(f.key, e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-border rounded-lg text-sm bg-stone-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-colors"
+                  >
+                    {f.options?.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                ) : f.type === "date" ? (
                   <input
-                    type="text"
-                    value={f.value}
-                    onChange={(e) => f.set(e.target.value)}
-                    className={`w-full py-2.5 border border-border rounded-lg text-sm bg-stone-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-colors ${
-                      f.prefix ? "pl-8 pr-3.5" : "px-3.5"
-                    }`}
+                    type="date"
+                    value={data[f.key] || ""}
+                    onChange={(e) => updateField(f.key, e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-border rounded-lg text-sm bg-stone-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-colors"
                   />
-                </div>
+                ) : (
+                  <div className="relative">
+                    {f.prefix && (
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-text-muted">
+                        {f.prefix}
+                      </span>
+                    )}
+                    <input
+                      type="text"
+                      value={data[f.key] || ""}
+                      onChange={(e) => updateField(f.key, e.target.value)}
+                      placeholder={f.placeholder}
+                      className={`w-full py-2.5 border border-border rounded-lg text-sm bg-stone-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-colors ${
+                        f.prefix ? "pl-8 pr-3.5" : "px-3.5"
+                      }`}
+                    />
+                  </div>
+                )}
               </div>
             ))}
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm text-text-secondary mb-1.5">
-                  Fecha de ingreso
-                </label>
-                <input
-                  type="date"
-                  value={fechaIngreso}
-                  onChange={(e) => setFechaIngreso(e.target.value)}
-                  className="w-full px-3.5 py-2.5 border border-border rounded-lg text-sm bg-stone-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-colors"
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-text-secondary mb-1.5">
-                  Fecha de despido
-                </label>
-                <input
-                  type="date"
-                  value={fechaDespido}
-                  onChange={(e) => setFechaDespido(e.target.value)}
-                  className="w-full px-3.5 py-2.5 border border-border rounded-lg text-sm bg-stone-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-colors"
-                />
-              </div>
-            </div>
-
-            <button className="w-full mt-2 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-brand-dark to-brand text-white rounded-lg text-sm font-medium hover:from-brand hover:to-brand-dark transition-all active:scale-[0.98] shadow-lg shadow-brand/20">
-              <FileText size={16} />
-              Generar documento
+            <button
+              onClick={handleDownload}
+              disabled={generating}
+              className="w-full mt-2 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-brand-dark to-brand text-white rounded-lg text-sm font-medium hover:from-brand hover:to-brand-dark transition-all active:scale-[0.98] shadow-lg shadow-brand/20 disabled:opacity-60"
+            >
+              {generating ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Download size={16} />
+              )}
+              {generating ? "Generando..." : "Descargar documento (.docx)"}
             </button>
           </div>
         </div>
@@ -770,76 +911,482 @@ function PlantillasTab() {
       <div className="col-span-5">
         <div className="bg-white rounded-xl border border-border p-8 shadow-sm min-h-[600px]">
           <div className="max-w-md mx-auto text-justify leading-relaxed">
-            <p className="text-center font-bold text-sm mb-1 tracking-wider">
-              C. JUEZ DEL TRIBUNAL LABORAL FEDERAL
-            </p>
-            <p className="text-center font-bold text-sm mb-6 tracking-wider">
-              EN TURNO. PRESENTE.
-            </p>
-
-            <p className="text-sm mb-4">
-              <span className="font-semibold underline decoration-brand/30 decoration-2 underline-offset-2">
-                {parteActora || "___________"}
-              </span>
-              , por mi propio derecho, señalando domicilio para oír y recibir
-              notificaciones en esta ciudad, ante Usted con el debido respeto
-              comparezco para exponer:
-            </p>
-
-            <p className="text-sm mb-6">
-              Que vengo a demandar de{" "}
-              <span className="font-semibold underline decoration-brand/30 decoration-2 underline-offset-2">
-                {parteDemandada || "___________"}
-              </span>{" "}
-              el pago y cumplimiento de las prestaciones que más adelante se
-              detallan, con motivo del{" "}
-              <strong>despido injustificado</strong> del que fui objeto.
-            </p>
-
-            <p className="font-bold text-xs uppercase tracking-[0.2em] mb-3">
-              Hechos
-            </p>
-
-            <p className="text-sm mb-3">
-              <strong>1.</strong> El suscrito ingresó a laborar para la
-              demandada con fecha{" "}
-              <span className="font-semibold underline decoration-brand/30 decoration-2 underline-offset-2">
-                {formatDateES(fechaIngreso)}
-              </span>
-              , desempeñando el puesto de{" "}
-              <span className="font-semibold underline decoration-brand/30 decoration-2 underline-offset-2">
-                {puesto || "___________"}
-              </span>
-              , percibiendo un salario diario de{" "}
-              <span className="font-semibold underline decoration-brand/30 decoration-2 underline-offset-2">
-                ${salario || "___________"}
-              </span>
-              .
-            </p>
-
-            <p className="text-sm mb-6">
-              <strong>2.</strong> Con fecha{" "}
-              <span className="font-semibold underline decoration-brand/30 decoration-2 underline-offset-2">
-                {formatDateES(fechaDespido)}
-              </span>{" "}
-              fui despedido de manera injustificada, sin que mediara causa
-              alguna de las previstas en el artículo 47 de la Ley Federal del
-              Trabajo.
-            </p>
-
-            <p className="font-bold text-xs uppercase tracking-[0.2em] mb-3">
-              Prestaciones
-            </p>
-
-            <p className="text-sm">
-              <strong>a)</strong> Indemnización constitucional de tres meses de
-              salario. <strong>b)</strong> Salarios caídos.{" "}
-              <strong>c)</strong> Prima de antigüedad. <strong>d)</strong>{" "}
-              Aguinaldo y vacaciones proporcionales.
-            </p>
+            {plantillaId === "demanda" && <PreviewDemanda data={data} />}
+            {plantillaId === "contestacion" && <PreviewContestacion data={data} />}
+            {plantillaId === "contrato" && <PreviewContrato data={data} />}
+            {plantillaId === "convenio" && <PreviewConvenio data={data} />}
           </div>
         </div>
       </div>
     </div>
   );
+}
+
+function Hl({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="font-semibold underline decoration-brand/30 decoration-2 underline-offset-2">
+      {children}
+    </span>
+  );
+}
+
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="font-bold text-xs uppercase tracking-[0.2em] mb-3 mt-6">{children}</p>
+  );
+}
+
+function PreviewDemanda({ data }: { data: Record<string, string> }) {
+  return (
+    <>
+      <p className="text-center font-bold text-sm mb-1 tracking-wider">
+        C. JUEZ DEL TRIBUNAL LABORAL FEDERAL
+      </p>
+      <p className="text-center font-bold text-sm mb-6 tracking-wider">
+        EN TURNO. PRESENTE.
+      </p>
+      <p className="text-sm mb-4">
+        <Hl>{hl(data.parteActora)}</Hl>, por mi propio derecho, señalando
+        domicilio para oír y recibir notificaciones en esta ciudad, ante Usted
+        con el debido respeto comparezco para exponer:
+      </p>
+      <p className="text-sm mb-6">
+        Que vengo a demandar de <Hl>{hl(data.parteDemandada)}</Hl> el pago y
+        cumplimiento de las prestaciones que más adelante se detallan, con
+        motivo del <strong>despido injustificado</strong> del que fui objeto.
+      </p>
+      <SectionTitle>Hechos</SectionTitle>
+      <p className="text-sm mb-3">
+        <strong>1.</strong> El suscrito ingresó a laborar para la demandada con
+        fecha <Hl>{formatDateES(data.fechaIngreso)}</Hl>, desempeñando el
+        puesto de <Hl>{hl(data.puesto)}</Hl>, percibiendo un salario diario de{" "}
+        <Hl>${hl(data.salario)}</Hl>.
+      </p>
+      <p className="text-sm mb-6">
+        <strong>2.</strong> Con fecha <Hl>{formatDateES(data.fechaDespido)}</Hl>{" "}
+        fui despedido de manera injustificada, sin que mediara causa alguna de
+        las previstas en el artículo 47 de la Ley Federal del Trabajo.
+      </p>
+      <SectionTitle>Prestaciones</SectionTitle>
+      <p className="text-sm">
+        <strong>a)</strong> Indemnización constitucional de tres meses de
+        salario. <strong>b)</strong> Salarios caídos. <strong>c)</strong> Prima
+        de antigüedad. <strong>d)</strong> Aguinaldo y vacaciones
+        proporcionales.
+      </p>
+    </>
+  );
+}
+
+function PreviewContestacion({ data }: { data: Record<string, string> }) {
+  return (
+    <>
+      <p className="text-center font-bold text-sm mb-1 tracking-wider">
+        C. JUEZ DEL TRIBUNAL LABORAL FEDERAL
+      </p>
+      <p className="text-center font-bold text-sm mb-6 tracking-wider">
+        EXPEDIENTE: {hl(data.expediente)}
+      </p>
+      <p className="text-sm mb-4">
+        <Hl>{hl(data.representanteLegal)}</Hl>, en mi carácter de apoderado
+        legal de <Hl>{hl(data.parteDemandada)}</Hl>, personalidad que acredito
+        con la escritura pública que adjunto, señalando domicilio para oír y
+        recibir notificaciones, ante Usted con el debido respeto comparezco
+        para:
+      </p>
+      <p className="text-sm mb-6">
+        Dar contestación a la demanda laboral promovida por{" "}
+        <Hl>{hl(data.parteActora)}</Hl> en contra de mi representada, en los
+        siguientes términos:
+      </p>
+      <SectionTitle>Excepciones y defensas</SectionTitle>
+      <p className="text-sm mb-3">
+        <strong>1. Falta de acción y derecho.</strong> El actor carece de acción
+        y derecho para reclamar las prestaciones que demanda, toda vez que la
+        relación laboral se dio por terminada de manera voluntaria por el propio
+        trabajador.
+      </p>
+      <p className="text-sm mb-3">
+        <strong>2. Negativa del despido.</strong> Mi representada niega lisa y
+        llanamente haber despedido al actor en la fecha señalada o en cualquier
+        otra.
+      </p>
+      <p className="text-sm mb-6">
+        <strong>3. Improcedencia de prestaciones.</strong> Son improcedentes las
+        prestaciones reclamadas en virtud de que no existe despido injustificado
+        que genere los conceptos demandados.
+      </p>
+      <SectionTitle>Contestación a los hechos</SectionTitle>
+      <p className="text-sm">
+        <strong>Al hecho 1.</strong> Es cierto que el actor prestó servicios
+        para mi representada, sin embargo se niegan los términos y condiciones
+        que señala. <strong>Al hecho 2.</strong> Se niega en todas y cada una de
+        sus partes el supuesto despido que refiere el actor.
+      </p>
+    </>
+  );
+}
+
+function PreviewContrato({ data }: { data: Record<string, string> }) {
+  const duracionLabel = data.duracion === "indefinido"
+    ? "por tiempo indefinido"
+    : data.duracion === "temporal"
+      ? "por obra o tiempo determinado"
+      : "como período de prueba de 30 días conforme al artículo 39-A de la LFT";
+
+  return (
+    <>
+      <p className="text-center font-bold text-sm mb-1 tracking-wider">
+        CONTRATO INDIVIDUAL DE TRABAJO
+      </p>
+      <p className="text-center text-xs text-text-muted mb-6">
+        Conforme a los artículos 20, 21 y 25 de la Ley Federal del Trabajo
+      </p>
+      <p className="text-sm mb-4">
+        En la Ciudad de México, a <Hl>{formatDateES(data.fechaInicio)}</Hl>,
+        celebran el presente contrato individual de trabajo, por una parte{" "}
+        <Hl>{hl(data.nombrePatron)}</Hl>, en lo sucesivo &quot;el Patrón&quot;,
+        y por la otra <Hl>{hl(data.nombreTrabajador)}</Hl>, en lo sucesivo
+        &quot;el Trabajador&quot;, al tenor de las siguientes:
+      </p>
+      <SectionTitle>Cláusulas</SectionTitle>
+      <p className="text-sm mb-3">
+        <strong>PRIMERA.</strong> El Trabajador se obliga a prestar sus
+        servicios personales subordinados al Patrón, desempeñando el puesto de{" "}
+        <Hl>{hl(data.puesto)}</Hl>, en el centro de trabajo ubicado en{" "}
+        <Hl>{hl(data.direccionTrabajo)}</Hl>.
+      </p>
+      <p className="text-sm mb-3">
+        <strong>SEGUNDA.</strong> La duración de la relación de trabajo será{" "}
+        <Hl>{duracionLabel}</Hl>.
+      </p>
+      <p className="text-sm mb-3">
+        <strong>TERCERA.</strong> El Trabajador percibirá un salario diario de{" "}
+        <Hl>${hl(data.salario)}</Hl> (pesos M.N.), pagadero de manera quincenal.
+      </p>
+      <p className="text-sm mb-3">
+        <strong>CUARTA.</strong> La jornada de trabajo será: <Hl>{hl(data.horario)}</Hl>,
+        sin exceder los máximos legales establecidos en los artículos 60 y 61
+        de la Ley Federal del Trabajo.
+      </p>
+      <p className="text-sm mb-3">
+        <strong>QUINTA.</strong> El Trabajador tendrá derecho a disfrutar de
+        vacaciones, prima vacacional, aguinaldo y demás prestaciones conforme
+        a la Ley Federal del Trabajo vigente.
+      </p>
+      <p className="text-sm mt-8 text-center text-text-muted text-xs">
+        ____________________________&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;____________________________
+      </p>
+      <p className="text-xs text-center text-text-muted">
+        El Patrón&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;El Trabajador
+      </p>
+    </>
+  );
+}
+
+function PreviewConvenio({ data }: { data: Record<string, string> }) {
+  return (
+    <>
+      <p className="text-center font-bold text-sm mb-1 tracking-wider">
+        CONVENIO DE TERMINACIÓN LABORAL
+      </p>
+      <p className="text-center text-xs text-text-muted mb-6">
+        Por mutuo consentimiento — Art. 53, fracción I, LFT
+      </p>
+      <p className="text-sm mb-4">
+        En la Ciudad de México, a <Hl>{formatDateES(data.fechaTerminacion)}</Hl>,
+        comparecen por una parte <Hl>{hl(data.nombrePatron)}</Hl>, en lo
+        sucesivo &quot;el Patrón&quot;, y por la otra{" "}
+        <Hl>{hl(data.nombreTrabajador)}</Hl>, en lo sucesivo &quot;el
+        Trabajador&quot;, quienes de común acuerdo convienen lo siguiente:
+      </p>
+      <SectionTitle>Declaraciones</SectionTitle>
+      <p className="text-sm mb-3">
+        <strong>1.</strong> El Trabajador ingresó a prestar sus servicios el día{" "}
+        <Hl>{formatDateES(data.fechaIngreso)}</Hl>, desempeñando el puesto de{" "}
+        <Hl>{hl(data.puesto)}</Hl>, con un salario diario de{" "}
+        <Hl>${hl(data.salario)}</Hl>.
+      </p>
+      <p className="text-sm mb-6">
+        <strong>2.</strong> Ambas partes manifiestan su libre voluntad de dar por
+        terminada la relación laboral a partir de esta fecha, sin que exista
+        coacción, engaño o presión de ninguna índole.
+      </p>
+      <SectionTitle>Cláusulas</SectionTitle>
+      <p className="text-sm mb-3">
+        <strong>PRIMERA.</strong> Las partes acuerdan dar por terminada la
+        relación de trabajo por mutuo consentimiento, conforme al artículo 53,
+        fracción I, de la Ley Federal del Trabajo.
+      </p>
+      <p className="text-sm mb-3">
+        <strong>SEGUNDA.</strong> El Patrón se obliga a cubrir al Trabajador la
+        cantidad total de <Hl>${hl(data.liquidacionTotal)}</Hl> (pesos M.N.) por
+        concepto de liquidación, que incluye: indemnización, prima de
+        antigüedad, vacaciones y prima vacacional proporcionales, aguinaldo
+        proporcional, y demás prestaciones devengadas.
+      </p>
+      <p className="text-sm mb-3">
+        <strong>TERCERA.</strong> El Trabajador manifiesta que con el pago
+        señalado en la cláusula anterior queda debidamente liquidado, sin
+        reservarse acción alguna presente o futura que ejercitar en contra del
+        Patrón.
+      </p>
+      <p className="text-sm mt-8 text-center text-text-muted text-xs">
+        ____________________________&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;____________________________
+      </p>
+      <p className="text-xs text-center text-text-muted">
+        El Patrón&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;El Trabajador
+      </p>
+    </>
+  );
+}
+
+function buildDocxParagraphs(
+  templateId: string,
+  data: Record<string, string>,
+  docx: {
+    Document: typeof import("docx").Document;
+    Paragraph: typeof import("docx").Paragraph;
+    TextRun: typeof import("docx").TextRun;
+    AlignmentType: typeof import("docx").AlignmentType;
+    HeadingLevel: typeof import("docx").HeadingLevel;
+  }
+): InstanceType<typeof import("docx").Paragraph>[] {
+  const { Paragraph, TextRun, AlignmentType } = docx;
+
+  const centered = (text: string, bold = true) =>
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      children: [new TextRun({ text, bold, size: 24 })],
+    });
+
+  const normal = (...runs: InstanceType<typeof TextRun>[]) =>
+    new Paragraph({
+      alignment: AlignmentType.JUSTIFIED,
+      spacing: { after: 200 },
+      children: runs,
+    });
+
+  const bold = (text: string) => new TextRun({ text, bold: true, size: 24 });
+  const plain = (text: string) => new TextRun({ text, size: 24 });
+  const underlined = (text: string) => new TextRun({ text, bold: true, underline: {}, size: 24 });
+
+  const sectionHeading = (text: string) =>
+    new Paragraph({
+      spacing: { before: 400, after: 200 },
+      children: [new TextRun({ text, bold: true, allCaps: true, size: 22 })],
+    });
+
+  const emptyLine = () => new Paragraph({ children: [] });
+
+  const signatureLine = () =>
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 800 },
+      children: [
+        plain("____________________________          ____________________________"),
+      ],
+    });
+
+  const signatureLabels = (left: string, right: string) =>
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      children: [plain(`${left}               ${right}`)],
+    });
+
+  if (templateId === "demanda") {
+    return [
+      centered("C. JUEZ DEL TRIBUNAL LABORAL FEDERAL"),
+      centered("EN TURNO. PRESENTE."),
+      emptyLine(),
+      normal(
+        underlined(hl(data.parteActora)),
+        plain(", por mi propio derecho, señalando domicilio para oír y recibir notificaciones en esta ciudad, ante Usted con el debido respeto comparezco para exponer:")
+      ),
+      normal(
+        plain("Que vengo a demandar de "),
+        underlined(hl(data.parteDemandada)),
+        plain(" el pago y cumplimiento de las prestaciones que más adelante se detallan, con motivo del "),
+        bold("despido injustificado"),
+        plain(" del que fui objeto.")
+      ),
+      sectionHeading("HECHOS"),
+      normal(
+        bold("1. "),
+        plain("El suscrito ingresó a laborar para la demandada con fecha "),
+        underlined(formatDateES(data.fechaIngreso)),
+        plain(", desempeñando el puesto de "),
+        underlined(hl(data.puesto)),
+        plain(", percibiendo un salario diario de "),
+        underlined("$" + hl(data.salario)),
+        plain(".")
+      ),
+      normal(
+        bold("2. "),
+        plain("Con fecha "),
+        underlined(formatDateES(data.fechaDespido)),
+        plain(" fui despedido de manera injustificada, sin que mediara causa alguna de las previstas en el artículo 47 de la Ley Federal del Trabajo.")
+      ),
+      sectionHeading("PRESTACIONES"),
+      normal(
+        bold("a) "),
+        plain("Indemnización constitucional de tres meses de salario. "),
+        bold("b) "),
+        plain("Salarios caídos. "),
+        bold("c) "),
+        plain("Prima de antigüedad. "),
+        bold("d) "),
+        plain("Aguinaldo y vacaciones proporcionales.")
+      ),
+    ];
+  }
+
+  if (templateId === "contestacion") {
+    return [
+      centered("C. JUEZ DEL TRIBUNAL LABORAL FEDERAL"),
+      centered(`EXPEDIENTE: ${hl(data.expediente)}`),
+      emptyLine(),
+      normal(
+        underlined(hl(data.representanteLegal)),
+        plain(", en mi carácter de apoderado legal de "),
+        underlined(hl(data.parteDemandada)),
+        plain(", personalidad que acredito con la escritura pública que adjunto, señalando domicilio para oír y recibir notificaciones, ante Usted con el debido respeto comparezco para:")
+      ),
+      normal(
+        plain("Dar contestación a la demanda laboral promovida por "),
+        underlined(hl(data.parteActora)),
+        plain(" en contra de mi representada, en los siguientes términos:")
+      ),
+      sectionHeading("EXCEPCIONES Y DEFENSAS"),
+      normal(
+        bold("1. Falta de acción y derecho. "),
+        plain("El actor carece de acción y derecho para reclamar las prestaciones que demanda, toda vez que la relación laboral se dio por terminada de manera voluntaria por el propio trabajador.")
+      ),
+      normal(
+        bold("2. Negativa del despido. "),
+        plain("Mi representada niega lisa y llanamente haber despedido al actor en la fecha señalada o en cualquier otra.")
+      ),
+      normal(
+        bold("3. Improcedencia de prestaciones. "),
+        plain("Son improcedentes las prestaciones reclamadas en virtud de que no existe despido injustificado que genere los conceptos demandados.")
+      ),
+      sectionHeading("CONTESTACIÓN A LOS HECHOS"),
+      normal(
+        bold("Al hecho 1. "),
+        plain("Es cierto que el actor prestó servicios para mi representada, sin embargo se niegan los términos y condiciones que señala. "),
+        bold("Al hecho 2. "),
+        plain("Se niega en todas y cada una de sus partes el supuesto despido que refiere el actor.")
+      ),
+    ];
+  }
+
+  if (templateId === "contrato") {
+    const duracionLabel = data.duracion === "indefinido"
+      ? "por tiempo indefinido"
+      : data.duracion === "temporal"
+        ? "por obra o tiempo determinado"
+        : "como período de prueba de 30 días conforme al artículo 39-A de la LFT";
+
+    return [
+      centered("CONTRATO INDIVIDUAL DE TRABAJO"),
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 400 },
+        children: [new TextRun({ text: "Conforme a los artículos 20, 21 y 25 de la Ley Federal del Trabajo", italics: true, size: 20 })],
+      }),
+      normal(
+        plain("En la Ciudad de México, a "),
+        underlined(formatDateES(data.fechaInicio)),
+        plain(", celebran el presente contrato individual de trabajo, por una parte "),
+        underlined(hl(data.nombrePatron)),
+        plain(', en lo sucesivo "el Patrón", y por la otra '),
+        underlined(hl(data.nombreTrabajador)),
+        plain(', en lo sucesivo "el Trabajador", al tenor de las siguientes:')
+      ),
+      sectionHeading("CLÁUSULAS"),
+      normal(
+        bold("PRIMERA. "),
+        plain("El Trabajador se obliga a prestar sus servicios personales subordinados al Patrón, desempeñando el puesto de "),
+        underlined(hl(data.puesto)),
+        plain(", en el centro de trabajo ubicado en "),
+        underlined(hl(data.direccionTrabajo)),
+        plain(".")
+      ),
+      normal(
+        bold("SEGUNDA. "),
+        plain("La duración de la relación de trabajo será "),
+        underlined(duracionLabel),
+        plain(".")
+      ),
+      normal(
+        bold("TERCERA. "),
+        plain("El Trabajador percibirá un salario diario de "),
+        underlined("$" + hl(data.salario)),
+        plain(" (pesos M.N.), pagadero de manera quincenal.")
+      ),
+      normal(
+        bold("CUARTA. "),
+        plain("La jornada de trabajo será: "),
+        underlined(hl(data.horario)),
+        plain(", sin exceder los máximos legales establecidos en los artículos 60 y 61 de la Ley Federal del Trabajo.")
+      ),
+      normal(
+        bold("QUINTA. "),
+        plain("El Trabajador tendrá derecho a disfrutar de vacaciones, prima vacacional, aguinaldo y demás prestaciones conforme a la Ley Federal del Trabajo vigente.")
+      ),
+      signatureLine(),
+      signatureLabels("El Patrón", "El Trabajador"),
+    ];
+  }
+
+  // convenio
+  return [
+    centered("CONVENIO DE TERMINACIÓN LABORAL"),
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 400 },
+      children: [new TextRun({ text: "Por mutuo consentimiento — Art. 53, fracción I, LFT", italics: true, size: 20 })],
+    }),
+    normal(
+      plain("En la Ciudad de México, a "),
+      underlined(formatDateES(data.fechaTerminacion)),
+      plain(", comparecen por una parte "),
+      underlined(hl(data.nombrePatron)),
+      plain(', en lo sucesivo "el Patrón", y por la otra '),
+      underlined(hl(data.nombreTrabajador)),
+      plain(', en lo sucesivo "el Trabajador", quienes de común acuerdo convienen lo siguiente:')
+    ),
+    sectionHeading("DECLARACIONES"),
+    normal(
+      bold("1. "),
+      plain("El Trabajador ingresó a prestar sus servicios el día "),
+      underlined(formatDateES(data.fechaIngreso)),
+      plain(", desempeñando el puesto de "),
+      underlined(hl(data.puesto)),
+      plain(", con un salario diario de "),
+      underlined("$" + hl(data.salario)),
+      plain(".")
+    ),
+    normal(
+      bold("2. "),
+      plain("Ambas partes manifiestan su libre voluntad de dar por terminada la relación laboral a partir de esta fecha, sin que exista coacción, engaño o presión de ninguna índole.")
+    ),
+    sectionHeading("CLÁUSULAS"),
+    normal(
+      bold("PRIMERA. "),
+      plain("Las partes acuerdan dar por terminada la relación de trabajo por mutuo consentimiento, conforme al artículo 53, fracción I, de la Ley Federal del Trabajo.")
+    ),
+    normal(
+      bold("SEGUNDA. "),
+      plain("El Patrón se obliga a cubrir al Trabajador la cantidad total de "),
+      underlined("$" + hl(data.liquidacionTotal)),
+      plain(" (pesos M.N.) por concepto de liquidación, que incluye: indemnización, prima de antigüedad, vacaciones y prima vacacional proporcionales, aguinaldo proporcional, y demás prestaciones devengadas.")
+    ),
+    normal(
+      bold("TERCERA. "),
+      plain("El Trabajador manifiesta que con el pago señalado en la cláusula anterior queda debidamente liquidado, sin reservarse acción alguna presente o futura que ejercitar en contra del Patrón.")
+    ),
+    signatureLine(),
+    signatureLabels("El Patrón", "El Trabajador"),
+  ];
 }
